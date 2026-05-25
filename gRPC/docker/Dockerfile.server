@@ -1,0 +1,19 @@
+# Use python slim base image
+FROM python:3.10-slim
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Install the gRPC and protobuf packages
+RUN pip install --no-cache-dir grpcio protobuf
+
+# Copy the server script and generated grpc stubs into the container
+COPY server.py .
+COPY device_pb2.py .
+COPY device_pb2_grpc.py .
+
+# Expose the gRPC port
+EXPOSE 50051
+
+# Command to run when the container starts
+CMD ["python", "server.py"]

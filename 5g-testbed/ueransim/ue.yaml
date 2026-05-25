@@ -1,0 +1,57 @@
+# Simulated SIM card cryptographic keys (must match Open5GS subscriber DB)
+mcc: '001'          # Mobile Country Code
+mnc: '01'           # Mobile Network Code
+supi: 'imsi-001010000000001'
+key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+op: 'E8ED289DEBA952E4285B44E71103E524'
+opType: 'OPC'
+amf: '8000'
+
+# List of gNodeBs to search for radio signal
+gnbSearchList:
+  - gnb-simulator
+
+# UERANSIM Security algorithms
+integrity:
+  IA1: true
+  IA2: true
+  IA3: true
+
+ciphering:
+  EA1: true
+  EA2: true
+  EA3: true
+
+integrityMaxRate:
+  uplink: 'full'
+  downlink: 'full'
+
+# Unified Access Control settings
+uacAic:
+  mps: false
+  mcs: false
+
+uacAcc:
+  normalClass: 0
+  class11: false
+  class12: false
+  class13: false
+  class14: false
+  class15: false
+
+# Requested network slices (configured-nssai and default-nssai)
+configured-nssai:
+  - sst: 1
+    sd: 0x000001
+
+default-nssai:
+  - sst: 1
+    sd: 0x000001
+
+# Initial PDU sessions to be established automatically
+sessions:
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 1
+      sd: 0x000001

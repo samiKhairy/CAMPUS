@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # 1. gRPC Edge Server
+  grpc-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    container_name: grpc-server
+    ports:
+      - "50051:50051"
+    environment:
+      - TARGET_DEVICES=device-1,device-2
+      - PAYLOAD_BYTES=100
+      - INTERVAL_SEC=1.0
+      - RUN_DURATION=10.0 # Set a finite duration so the container finishes and saves results on its own
+      - PYTHONUNBUFFERED=1 # Disables Python output buffering to see logs in real-time
+    volumes:
+      - ./results:/app/results # Sync generated results to local host results directory
+    networks:
+      - campus-net
+
+  # 2. Simulated Device 1
+  device-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: grpc-device-1
+    command: ["python", "client.py", "device-1", "--server", "grpc-server:50051"]
+    environment:
+      - GRPC_SERVER=grpc-server:50051
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - grpc-server
+    networks:
+      - campus-net
+
+  # 3. Simulated Device 2
+  device-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: grpc-device-2
+    command: ["python", "client.py", "device-2", "--server", "grpc-server:50051"]
+    environment:
+      - GRPC_SERVER=grpc-server:50051
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - grpc-server
+    networks:
+      - campus-net
+
+networks:
+  campus-net:
+    driver: bridge

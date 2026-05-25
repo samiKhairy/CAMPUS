@@ -1,0 +1,17 @@
+global:
+  max:
+    ue: 1024
+
+logger:
+  level: info
+
+db_uri: mongodb://mongodb:27017/open5gs
+
+pcf:
+  sbi:
+    server:
+      - dev: eth0
+        port: 7777
+    client:
+      scp:
+        - uri: http://scp:7777

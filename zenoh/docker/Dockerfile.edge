@@ -1,0 +1,14 @@
+# Use python slim base image
+FROM python:3.10-slim
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Install the Zenoh python package
+RUN pip install --no-cache-dir eclipse-zenoh
+
+# Copy the edge script into the container
+COPY src/edge_zenoh.py .
+
+# Command to run when the container starts
+CMD ["python", "edge_zenoh.py"]

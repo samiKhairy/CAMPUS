@@ -1,0 +1,287 @@
+services:
+  # 1. MongoDB Database to store subscriber profiles
+  mongodb:
+    image: mongo:4.4.10
+    container_name: mongodb
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      5g-net:
+        aliases:
+          - mongodb
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 2. Network Repository Function (NRF) - service directory
+  open5gs-nrf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-nrf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-nrfd", "-c", "/etc/open5gs/nrf.yaml"]
+    volumes:
+      - ./open5gs/nrf.yaml:/etc/open5gs/nrf.yaml
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      5g-net:
+        aliases:
+          - nrf
+
+  # 2b. Service Communication Proxy (SCP) - SBI router/forwarder
+  open5gs-scp:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-scp
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-scpd"]
+    depends_on:
+      - open5gs-nrf
+    networks:
+      5g-net:
+        aliases:
+          - scp
+
+  # 2c. Unified Data Repository (UDR) - subscriber profile storage engine
+  open5gs-udr:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-udr
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-udrd"]
+    environment:
+      - DB_URI=mongodb://mongodb:27017/open5gs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - udr
+
+  # 2d. Unified Data Management (UDM) - subscriber data coordinator
+  open5gs-udm:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-udm
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-udmd"]
+    depends_on:
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - udm
+
+  # 2e. Authentication Server Function (AUSF) - crypto authentication engine
+  open5gs-ausf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-ausf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-ausfd"]
+    depends_on:
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - ausf
+
+  # 2f. Policy Control Function (PCF) - network slice and QoS manager
+  open5gs-pcf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-pcf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-pcfd"]
+    environment:
+      - DB_URI=mongodb://mongodb:27017/open5gs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+      open5gs-bsf:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - pcf
+
+  # 2g. Binding Support Function (BSF) - session binding registry
+  open5gs-bsf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-bsf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-bsfd"]
+    depends_on:
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - bsf
+
+  # 3. Access and Mobility Management Function (AMF) - control plane entry point
+  open5gs-amf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-amf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-amfd", "-c", "/etc/open5gs/amf.yaml"]
+    volumes:
+      - ./open5gs/amf.yaml:/etc/open5gs/amf.yaml
+    depends_on:
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+      open5gs-ausf:
+        condition: service_started
+      open5gs-udm:
+        condition: service_started
+      open5gs-udr:
+        condition: service_started
+      open5gs-pcf:
+        condition: service_started
+      open5gs-bsf:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - amf
+
+  # 4. Session Management Function (SMF) - IP & tunnel allocator
+  open5gs-smf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-smf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-smfd", "-c", "/etc/open5gs/smf.yaml"]
+    volumes:
+      - ./open5gs/smf.yaml:/etc/open5gs/smf.yaml
+    environment:
+      - DB_URI=mongodb://mongodb:27017/open5gs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+      open5gs-amf:
+        condition: service_started
+      open5gs-upf:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - smf
+
+  # 5. User Plane Function (UPF) - raw packet router
+  open5gs-upf:
+    image: gradiant/open5gs:2.7.2
+    container_name: open5gs-upf
+    entrypoint: ""
+    command: ["/opt/open5gs/bin/open5gs-upfd"]
+    user: root
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    depends_on:
+      open5gs-nrf:
+        condition: service_started
+      open5gs-scp:
+        condition: service_started
+    networks:
+      5g-net:
+        aliases:
+          - upf
+
+  # 6. Web User Interface - subscriber management portal
+  open5gs-webui:
+    image: gradiant/open5gs-webui:2.7.2
+    container_name: open5gs-webui
+    ports:
+      - "3000:9999"
+    environment:
+      - DB_URI=mongodb://mongodb:27017/open5gs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - 5g-net
+
+  # 7. Simulated gNodeB Base Station
+  gnb-simulator:
+    image: louisroyer/ueransim-gnb:latest
+    container_name: gnb-simulator
+    entrypoint: ""
+    command: ["/usr/bin/nr-gnb", "-c", "/etc/ueransim/gnb.yaml", "-l", "trace"]
+    volumes:
+      - ./ueransim/gnb.yaml:/etc/ueransim/gnb.yaml
+    depends_on:
+      - open5gs-amf
+    networks:
+      - 5g-net
+
+  # 8. Simulated Device (Vehicle running UERANSIM UE + client code)
+  vehicle-ue:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.ue
+    container_name: vehicle-ue
+    entrypoint: ""
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    volumes:
+      - ./ueransim/ue.yaml:/etc/ueransim/ue.yaml
+      - ./app:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Starts UERANSIM UE, waits for the tunnel interface, then runs client
+    command: >
+      bash -c "/usr/bin/nr-ue -c /etc/ueransim/ue.yaml &
+      echo 'Waiting for uesimtun0...' &&
+      for i in {1..20}; do if ip link show uesimtun0 >/dev/null 2>&1; then break; fi; sleep 1; done &&
+      python3 /app/client_grpc.py --bind-interface uesimtun0"
+    depends_on:
+      - gnb-simulator
+    networks:
+      - 5g-net
+
+  # 9. CAMPUS Edge Node (Connected to UPF output)
+  edge-server:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.server
+    container_name: edge-server
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - open5gs-upf
+    networks:
+      - 5g-net
+
+networks:
+  5g-net:
+    driver: bridge
+
+volumes:
+  mongodb-data:

@@ -7,6 +7,9 @@ WORKDIR /app
 # Install the Zenoh python package
 RUN pip install --no-cache-dir eclipse-zenoh
 
+# Install iproute2 for tc (traffic control) network emulation
+RUN apt-get update && apt-get install -y iproute2 && rm -rf /var/lib/apt/lists/*
+
 # Copy the device script into the container
 COPY src/device_zenoh.py .
 

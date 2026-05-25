@@ -17,6 +17,8 @@ services:
       - PYTHONUNBUFFERED=1 # Disables Python output buffering to see logs in real-time
     volumes:
       - ./results:/app/results # Sync generated results to local host results directory
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 
@@ -32,6 +34,8 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - grpc-server
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 
@@ -47,6 +51,8 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - grpc-server
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 

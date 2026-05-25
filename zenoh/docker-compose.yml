@@ -25,6 +25,8 @@ services:
       - ./results:/app/results # Sync generated results to local host results directory
     depends_on:
       - zenoh-router
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 
@@ -39,6 +41,8 @@ services:
       - ZENOH_ROUTER=tcp/zenoh-router:7447
     depends_on:
       - zenoh-router
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 
@@ -53,6 +57,8 @@ services:
       - ZENOH_ROUTER=tcp/zenoh-router:7447
     depends_on:
       - zenoh-router
+    cap_add:
+      - NET_ADMIN
     networks:
       - campus-net
 

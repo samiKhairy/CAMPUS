@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # 1. The MQTT Broker
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - campus-net
+
+  # 2. The Edge Node
+  edge-node:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.edge
+    container_name: edge-node
+    environment:
+      - MQTT_BROKER=mqtt-broker:1883
+      - PAYLOAD_BYTES=100
+      - INTERVAL_SEC=1.0
+      - TARGET_DEVICES=device-1,device-2
+    volumes:
+      - ./results:/app/results # Sync generated results to local host results directory
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  # 3. Simulated Device 1
+  device-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-1
+    command: ["python", "device_mqtt.py", "device-1"]
+    environment:
+      - MQTT_BROKER=mqtt-broker:1883
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  # 4. Simulated Device 2
+  device-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-2
+    command: ["python", "device_mqtt.py", "device-2"]
+    environment:
+      - MQTT_BROKER=mqtt-broker:1883
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+networks:
+  campus-net:
+    driver: bridge

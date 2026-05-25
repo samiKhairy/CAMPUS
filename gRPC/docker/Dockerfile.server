@@ -7,6 +7,9 @@ WORKDIR /app
 # Install the gRPC and protobuf packages
 RUN pip install --no-cache-dir grpcio protobuf
 
+# Install iproute2 for tc (traffic control) network emulation
+RUN apt-get update && apt-get install -y iproute2 && rm -rf /var/lib/apt/lists/*
+
 # Copy the server script and generated grpc stubs into the container
 COPY server.py .
 COPY device_pb2.py .

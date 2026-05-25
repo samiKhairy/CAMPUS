@@ -1,0 +1,17 @@
+# Use python slim base image
+FROM python:3.10-slim
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Install the MQTT python package
+RUN pip install --no-cache-dir paho-mqtt
+
+# Install iproute2 for tc (traffic control) network emulation
+RUN apt-get update && apt-get install -y iproute2 && rm -rf /var/lib/apt/lists/*
+
+# Copy the edge script into the container
+COPY src/edge_mqtt.py .
+
+# Command to run when the container starts
+CMD ["python", "edge_mqtt.py"]

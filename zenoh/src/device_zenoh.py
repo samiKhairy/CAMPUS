@@ -68,7 +68,7 @@ def on_command(sample):
     # ts_edge_ns is the timestamp of the command from the edge node 
     # ts_device_ns is the timestamp of the command from the device 
     ts_edge_ns = data["ts_edge_ns"]
-    ts_device_ns = time.time_ns()
+    ts_device_ns = time.monotonic_ns()
 
     # print the command
     print(f"[{device_id}] Received command: {data['payload']}")

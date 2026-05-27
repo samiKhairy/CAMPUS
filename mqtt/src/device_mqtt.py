@@ -65,7 +65,7 @@ def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload.decode('utf-8'))
         ts_edge_ns = data["ts_edge_ns"]
-        ts_device_ns = time.time_ns()
+        ts_device_ns = time.monotonic_ns()
 
         print(f"[{device_id}] Received command: {data['payload'][:30]}...")
 

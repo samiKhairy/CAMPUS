@@ -187,6 +187,9 @@ def write_summary_markdown(data_list, output_path):
     if df.empty:
         return
         
+    # Exclude 1Hz runs from the summary table to avoid volatile percentiles due to low sample sizes (15-150 samples)
+    df = df[df["rate"].isin([5, 10])]
+    
     df_sorted = df.sort_values(by=["protocol", "profile", "devices", "payload", "rate"])
     
     with open(output_path, "w") as f:

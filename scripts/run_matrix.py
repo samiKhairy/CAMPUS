@@ -1,3 +1,12 @@
+# this file run the matrix experiment and does the following things :  
+# 1. spin up the docker compose file for the given protocol 
+# 2. create a temporary docker compose file for the given protocol 
+# 3. apply the netem rule for the given protocol 
+# 4. run the experiment for the given protocol 
+# 5. clean up the docker compose file for the given protocol 
+
+    
+
 import argparse
 import os
 import subprocess
@@ -194,7 +203,7 @@ def main():
     parser.add_argument("--profiles", default="clean,good_5g,degraded_5g", help="Comma-separated profiles")
     parser.add_argument("--devices", default="1,2,5,10", help="Comma-separated device counts N")
     parser.add_argument("--payloads", default="100,2000", help="Comma-separated payloads in bytes")
-    parser.add_argument("--rates", default="1,10", help="Comma-separated rates in Hz")
+    parser.add_argument("--rates", default="5,10", help="Comma-separated rates in Hz")
     parser.add_argument("--duration", type=int, default=30, help="Duration in seconds per run")
     parser.add_argument("--dry-run", action="store_true", help="Print plans without running")
     args = parser.parse_args()

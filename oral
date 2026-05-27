@@ -1,0 +1,49 @@
+Viewed walkthrough%20v2.0.md:30-52
+
+Here is a structured, step-by-step **verbal script** you can use during your meeting with Filippo and Francesco. It is broken down into clear talking points that flow logically from what you did to the major findings.
+
+---
+
+### Step 1: The opening summary (What you did)
+> *"Hi Filippo, Francesco. I wanted to share the results of the protocol comparison benchmarks we set up this week. I implemented the MQTT prototype, which now has full parity with our gRPC and Zenoh setups.*
+> 
+> *To measure latency and scalability fairly, I built an automated matrix harness. I ran **144 experiments** sweeping across the three protocols, device scaling from 1 to 10 nodes, 1Hz and 10Hz message rates, and different network delay and packet loss profiles emulated inside Docker using Linux traffic control (`tc netem`)."*
+
+---
+
+### Step 2: The baseline results (Clean network)
+> *"On a clean local network, we got very interesting results. Both **Zenoh** and **gRPC** performed incredibly well, with baseline round-trip latencies under **2.5 milliseconds** (with Zenoh at ~1.0 ms and gRPC at ~2.2 ms).*
+> 
+> *However, **MQTT** had a baseline latency of **46 milliseconds** even with zero network delay. I investigated this and found it's a client-side library bottleneck: the Paho-MQTT python client loop uses a default select-polling timeout of 50ms, which artificially delays packet processing. This shows that the choice of client library is just as important as the wire protocol itself."*
+
+---
+
+### Step 3: Good 5G scaling (Nominal conditions)
+> *"Under normal 5G conditions—where we injected 20ms one-way delay, representing a 40ms physical RTT limit—both **Zenoh and gRPC scaled beautifully**.*
+> 
+> *Even when we scaled to 10 concurrent devices at a 10Hz message rate, both Zenoh and gRPC maintained stable round-trip times right at the network floor of **~43 milliseconds** (with p95 tail latencies under 46ms). MQTT's latency was stable but higher, around **84 milliseconds**."*
+
+---
+
+### Step 4: Degraded 5G scaling (The big finding)
+> *"The most critical finding came when we tested degraded network conditions (80ms one-way delay, representing 160ms RTT, and 1% packet loss) under high load (10 devices, 2KB payloads, 10Hz rate).*
+> 
+> * **gRPC and Zenoh** absorbed the packet loss successfully. Their median latency stayed right at the network floor of **~164 milliseconds**, and their worst-case p99 latency stayed under **450 milliseconds** due to standard TCP retransmissions.
+> * **MQTT completely collapsed**. Its median latency jumped to **31.9 seconds**, and its p95 tail latency exploded to **58.3 seconds**. 
+> 
+> *This is a classic case of **Buffer Bloat**. Because MQTT relies on a central broker, a single packet loss blocks the TCP socket queue. As the edge server kept pushing messages at 10Hz, packets queued up inside the broker's buffer waiting for TCP retransmissions, creating an endless backlog."*
+
+---
+
+### Step 5: Recommendations & Next steps (The wrap-up)
+> *"Based on these findings, my recommendations for the CAMPUS architecture are:
+> 
+> 1. **We should avoid central MQTT brokers for safety-critical downlinks**. A degraded 5G connection will cause queueing delays that render the system unusable for real-time safety.
+> 2. **Zenoh is the overall winner**: it is lightweight, scales cleanly, and has the lowest overhead.
+> 3. **gRPC is highly reliable**: its direct point-to-point HTTP/2 connections isolate packet loss, so one congested OBU doesn't slow down others.
+> 
+> *For next week, now that we have these Docker-netem baseline numbers, I plan to:*
+> * *Transition to testing these protocols over our **5G SA core (Open5GS + UERANSIM)** on Linux.*
+> * *Test **QUIC-based transports** (Zenoh-over-QUIC and MQTT-over-QUIC using NanoMQ) to see if UDP/QUIC avoids the TCP head-of-line blocking we saw today.*
+> 
+> *I have compiled a detailed 3-page technical brief with the data tables and plots in the workspace if you want to look at the exact curves."*

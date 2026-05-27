@@ -118,7 +118,7 @@ pubs = {
 
 # Ack listener callback
 def on_ack(sample):
-    recv_ts_ns = time.time_ns()
+    recv_ts_ns = time.monotonic_ns()
     try:
         data = json.loads(sample.payload.to_string())
         dev = data["device_id"]
@@ -146,7 +146,14 @@ def on_ack(sample):
 ack_sub = session.declare_subscriber("campus/ack/**", on_ack)
 
 sent_counts = {dev: 0 for dev in TARGET_DEVICES}
-start_time = time.time()
+
+# Startup delay to allow netem rules to be injected before data flow starts
+START_DELAY_SEC = float(os.getenv("START_DELAY_SEC", "5.0"))
+if START_DELAY_SEC > 0:
+    print(f"[EDGE] Sleeping for {START_DELAY_SEC} seconds to allow network setup...")
+    time.sleep(START_DELAY_SEC)
+
+start_time = time.monotonic()
 
 try: 
     print(f"[EDGE] Starting Zenoh Edge Experiment...")
@@ -161,7 +168,7 @@ try:
 
     while True:
         # Check duration limit
-        if RUN_DURATION > 0 and (time.time() - start_time) >= RUN_DURATION:
+        if RUN_DURATION > 0 and (time.monotonic() - start_time) >= RUN_DURATION:
             print(f"[EDGE] Duration limit ({RUN_DURATION}s) reached. Stopping sending loop...")
             break
             
@@ -177,7 +184,7 @@ try:
             if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
                 continue
                 
-            ts_edge_ns = time.time_ns()
+            ts_edge_ns = time.monotonic_ns()
             payload = {
                 "device_id": dev,
                 "payload": payload_str,

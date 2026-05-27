@@ -57,7 +57,7 @@ def run_client():
     ack_queue.put(device_pb2.CommandAck(
         device_id=device_id,
         status="Connected",
-        ts_device_ns=time.time_ns(),
+        ts_device_ns=time.monotonic_ns(),
         ts_edge_ns=0
     ))
 
@@ -71,7 +71,7 @@ def run_client():
 
         # Process incoming commands from the server
         for command in response_iterator:
-            ts_device_ns = time.time_ns()
+            ts_device_ns = time.monotonic_ns()
             print(f"[{device_id}] Received command: {len(command.payload)} bytes")
             
             # Echo back the send timestamp ts_edge_ns for RTT calculation

@@ -1,0 +1,51 @@
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    cmake git build-essential ninja-build \
+    libssl-dev pkg-config curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/nanomq/NanoSDK /nanosdk \
+ && cd /nanosdk \
+ && git submodule update --init --depth 1 extern/msquic \
+ && cd extern/msquic \
+ && git submodule update --init --depth 1 submodules/clog submodules/openssl
+RUN cmake -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DNNG_ENABLE_QUIC=ON \
+    -DBUILD_SHARED_LIBS=ON \
+    -DNNG_TESTS=OFF \
+    -DNNG_TOOLS=OFF \
+    -S /nanosdk -B /nanosdk/build \
+    && ninja -C /nanosdk/build \
+    && ninja -C /nanosdk/build install
+
+WORKDIR /app
+RUN curl -fsSL https://raw.githubusercontent.com/DaveGamble/cJSON/master/cJSON.h -o /app/cJSON.h \
+ && curl -fsSL https://raw.githubusercontent.com/DaveGamble/cJSON/master/cJSON.c -o /app/cJSON.c
+
+COPY src/edge_mqtt.c .
+RUN gcc -O2 -o edge_mqtt edge_mqtt.c cJSON.c \
+    -I/usr/local/include \
+    -L/usr/local/lib \
+    -lnng -lmsquic -lpthread -lssl -lcrypto \
+    && strip edge_mqtt
+
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y \
+    libssl3 iproute2 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add EMQX's built-in CA cert to system trust so MsQuic (via OpenSSL)
+# can validate EMQX's self-signed server cert during QUIC TLS handshake
+COPY --from=emqx/emqx:latest /opt/emqx/etc/certs/cacert.pem /usr/local/share/ca-certificates/emqx-ca.crt
+RUN update-ca-certificates
+
+COPY --from=builder /usr/local/lib/libnng* /usr/local/lib/
+COPY --from=builder /usr/local/lib/libmsquic* /usr/local/lib/
+COPY --from=builder /app/edge_mqtt /app/edge_mqtt
+RUN ldconfig
+
+WORKDIR /app
+CMD ["/app/edge_mqtt"]

@@ -1,0 +1,38 @@
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    cmake git build-essential ninja-build \
+    libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/nanomq/nanomq /nanomq \
+ && cd /nanomq \
+ && git submodule update --init --depth 1 nng \
+ && cd nng \
+ && git submodule update --init --depth 1 extern/msquic \
+ && cd extern/msquic \
+ && git submodule update --init --depth 1 submodules/clog submodules/openssl
+
+RUN cmake -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DNNG_ENABLE_QUIC=ON \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_NANOMQ_CLI=OFF \
+    -DNANOMQ_TESTS=OFF \
+    -S /nanomq -B /nanomq/build \
+    && ninja -C /nanomq/build \
+    && ninja -C /nanomq/build install
+
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y \
+    libssl3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/libnng* /usr/local/lib/
+COPY --from=builder /usr/local/lib/libmsquic* /usr/local/lib/
+COPY --from=builder /usr/local/bin/nanomq /usr/local/bin/nanomq
+RUN ldconfig
+
+EXPOSE 1883 14567/udp
+CMD ["nanomq", "start"]

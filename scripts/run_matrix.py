@@ -31,7 +31,7 @@ def check_docker():
 def get_container_id(compose_path, service_name):
     try:
         res = subprocess.run(
-            ["docker", "compose", "-f", compose_path, "ps", "-q", service_name],
+            ["docker", "compose", "-f", compose_path, "ps", "-a", "-q", service_name],
             capture_output=True, text=True, check=True
         )
         return res.stdout.strip()
@@ -126,6 +126,58 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "networks": ["campus-net"]
             }
 
+    elif protocol == "zenoh-quic":
+        # 1. Zenoh Router (QUIC/UDP with TLS certs)
+        compose["services"]["zenoh-router"] = {
+            "image": "eclipse/zenoh:latest",
+            "command": [
+                "--listen", "quic/0.0.0.0:7447",
+                "--no-multicast-scouting",
+                "--cfg", "transport/link/tls/listen_certificate:\"/etc/zenoh/cert.pem\"",
+                "--cfg", "transport/link/tls/listen_private_key:\"/etc/zenoh/key.pem\""
+            ],
+            "ports": ["7447:7447/udp"],
+            "volumes": [f"{os.path.join(abs_root_dir, 'certs')}:/etc/zenoh"],
+            "networks": ["campus-net"]
+        }
+        
+        # 2. Edge Node
+        compose["services"]["edge-node"] = {
+            "build": {
+                "context": os.path.join(abs_root_dir, "zenoh-quic"),
+                "dockerfile": "docker/Dockerfile.edge"
+            },
+            "environment": [
+                "ZENOH_ROUTER=quic/zenoh-router:7447",
+                f"TARGET_DEVICES={devices_str}",
+                f"PAYLOAD_BYTES={payload_bytes}",
+                f"INTERVAL_SEC={interval_sec}",
+                f"RUN_DURATION={run_duration}",
+                f"OUTPUT_CSV=/app/results/{filename}"
+            ],
+            "volumes": [
+                f"{abs_output_dir}:/app/results",
+                f"{os.path.join(abs_root_dir, 'certs')}:/etc/zenoh"
+            ],
+            "depends_on": ["zenoh-router"],
+            "cap_add": ["NET_ADMIN"],
+            "networks": ["campus-net"]
+        }
+        
+        # 3. Devices
+        for dev in devices_list:
+            compose["services"][dev] = {
+                "build": {
+                    "context": os.path.join(abs_root_dir, "zenoh-quic"),
+                    "dockerfile": "docker/Dockerfile.device"
+                },
+                "command": ["python", "device_zenoh.py", dev, "--router", "quic/zenoh-router:7447"],
+                "volumes": [f"{os.path.join(abs_root_dir, 'certs')}:/etc/zenoh"],
+                "depends_on": ["zenoh-router"],
+                "cap_add": ["NET_ADMIN"],
+                "networks": ["campus-net"]
+            }
+
     elif protocol == "mqtt":
         # 1. Mosquitto Broker
         compose["services"]["mqtt-broker"] = {
@@ -169,6 +221,125 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "networks": ["campus-net"]
             }
 
+    elif protocol == "mqtt-tcp-c":
+        # 1. NanoMQ Broker (TCP only for this variant)
+        compose["services"]["mqtt-broker"] = {
+            "image": "emqx/nanomq:latest-full",
+            "ports": ["1883:1883"],
+            "volumes": [
+                f"{os.path.join(abs_root_dir, 'mqtt-quic', 'nanomq.conf')}:/etc/nanomq.conf",
+                f"{os.path.join(abs_root_dir, 'mqtt-quic', 'nanomq.conf')}:/usr/local/nanomq/nanomq.conf",
+                f"{os.path.join(abs_root_dir, 'certs')}:/etc/certs"
+            ],
+            "command": ["nanomq", "start", "--conf", "/etc/nanomq.conf"],
+            "networks": ["campus-net"]
+        }
+        
+        # 2. Edge Node (C client)
+        compose["services"]["edge-node"] = {
+            "build": {
+                "context": os.path.join(abs_root_dir, "mqtt-quic"),
+                "dockerfile": "docker/Dockerfile.edge"
+            },
+            "environment": [
+                "MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883",
+                f"TARGET_DEVICES={devices_str}",
+                f"PAYLOAD_BYTES={payload_bytes}",
+                f"INTERVAL_SEC={interval_sec}",
+                f"RUN_DURATION={run_duration}",
+                f"OUTPUT_CSV=/app/results/{filename}"
+            ],
+            "volumes": [f"{abs_output_dir}:/app/results"],
+            "depends_on": ["mqtt-broker"],
+            "cap_add": ["NET_ADMIN"],
+            "networks": ["campus-net"]
+        }
+        
+        # 3. Devices (C client)
+        for dev in devices_list:
+            compose["services"][dev] = {
+                "build": {
+                    "context": os.path.join(abs_root_dir, "mqtt-quic"),
+                    "dockerfile": "docker/Dockerfile.device"
+                },
+                "environment": [
+                    f"DEVICE_ID={dev}",
+                    "MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883"
+                ],
+                "depends_on": ["mqtt-broker"],
+                "cap_add": ["NET_ADMIN"],
+                "networks": ["campus-net"]
+            }
+
+    elif protocol == "mqtt-quic":
+        # 1. EMQX Broker - the only broker that supports accepting incoming MQTT-over-QUIC
+        #    NanoMQ only supports QUIC for outbound bridging, not as a server listener.
+        #    We use EMQX's built-in default self-signed certs; clients skip TLS verification.
+        compose["services"]["mqtt-broker"] = {
+            "image": "emqx/emqx:latest",
+            "ports": ["1883:1883", "14567:14567/udp"],
+            "environment": [
+                "EMQX_LISTENERS__QUIC__DEFAULT__ENABLED=true",
+                "EMQX_LISTENERS__QUIC__DEFAULT__BIND=0.0.0.0:14567",
+                "EMQX_LISTENERS__QUIC__DEFAULT__ENABLE_AUTHN=false",
+                "EMQX_ALLOW_ANONYMOUS=true",
+                "EMQX_LOG__CONSOLE__LEVEL=warning"
+            ],
+            "networks": ["campus-net"],
+            "healthcheck": {
+                "test": ["CMD", "emqx", "ping"],
+                "interval": "5s",
+                "timeout": "5s",
+                "retries": 10,
+                "start_period": "30s"
+            }
+        }
+        
+        # 2. Edge Node (C client using NanoSDK with QUIC transport)
+        compose["services"]["edge-node"] = {
+            "build": {
+                "context": os.path.join(abs_root_dir, "mqtt-quic"),
+                "dockerfile": "docker/Dockerfile.edge"
+            },
+            "environment": [
+                "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567",
+                f"TARGET_DEVICES={devices_str}",
+                f"PAYLOAD_BYTES={payload_bytes}",
+                f"INTERVAL_SEC={interval_sec}",
+                f"RUN_DURATION={run_duration}",
+                f"OUTPUT_CSV=/app/results/{filename}",
+                "START_DELAY_SEC=2"
+            ],
+            "volumes": [f"{abs_output_dir}:/app/results"],
+            "depends_on": {
+                "mqtt-broker": {
+                    "condition": "service_healthy"
+                }
+            },
+            "cap_add": ["NET_ADMIN"],
+            "networks": ["campus-net"]
+        }
+        
+        # 3. Devices (C client using NanoSDK with QUIC transport)
+        for dev in devices_list:
+            compose["services"][dev] = {
+                "build": {
+                    "context": os.path.join(abs_root_dir, "mqtt-quic"),
+                    "dockerfile": "docker/Dockerfile.device"
+                },
+                "environment": [
+                    f"DEVICE_ID={dev}",
+                    "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567"
+                ],
+                "depends_on": {
+                    "mqtt-broker": {
+                        "condition": "service_healthy"
+                    }
+                },
+                "cap_add": ["NET_ADMIN"],
+                "networks": ["campus-net"]
+            }
+
     compose["networks"] = {"campus-net": {"driver": "bridge"}}
     return compose
 
@@ -199,7 +370,7 @@ def apply_netem(container, impairment):
 
 def main():
     parser = argparse.ArgumentParser(description="Unified Experiment Matrix Runner")
-    parser.add_argument("--protocols", default="grpc,zenoh,mqtt", help="Comma-separated protocols")
+    parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-tcp-c,mqtt-quic", help="Comma-separated protocols")
     parser.add_argument("--profiles", default="clean,good_5g,degraded_5g", help="Comma-separated profiles")
     parser.add_argument("--devices", default="1,2,5,10", help="Comma-separated device counts N")
     parser.add_argument("--payloads", default="100,2000", help="Comma-separated payloads in bytes")
@@ -316,6 +487,17 @@ def main():
                         else:
                             print("  [ERROR] Edge container not found! Sleeping instead...")
                             time.sleep(args.duration)
+                        
+                        # Print logs for debugging
+                        print("  -> Printing logs for debugging...")
+                        for service_name in compose_dict["services"].keys():
+                            container_id = get_container_id(temp_compose_path, service_name)
+                            if container_id:
+                                print(f"\n========================================\n--- LOGS FOR {service_name} ---\n========================================")
+                                logs_res = subprocess.run(["docker", "logs", container_id], capture_output=True, text=True)
+                                print(logs_res.stdout)
+                                print(logs_res.stderr)
+                                print("========================================\n")
                         
                         # Clean up docker compose setup
                         print("  -> Shutting down and cleaning up containers...")

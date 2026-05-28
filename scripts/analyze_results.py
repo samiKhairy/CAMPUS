@@ -15,9 +15,9 @@ def parse_filename(filename):
         }
     return None
 
-def process_results(root_dir):
+def process_results(root_dir, output_base):
     data_list = []
-    matrix_dir = os.path.join(root_dir, "results", "matrix")
+    matrix_dir = os.path.join(root_dir, output_base)
     
     if not os.path.exists(matrix_dir):
         print(f"[ERROR] Directory does not exist: {matrix_dir}")
@@ -209,18 +209,23 @@ def write_summary_markdown(data_list, output_path):
     print(f"[EDGE] Wrote benchmark markdown summary to: {output_path}")
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Analyze Benchmark Results")
+    parser.add_argument("--output-base", default="results/unified", help="Base directory where results are stored")
+    args = parser.parse_args()
+
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print("[ANALYZE] Processing CSV files from matrix results...")
-    data_list = process_results(root_dir)
+    print(f"[ANALYZE] Processing CSV files from {args.output_base}...")
+    data_list = process_results(root_dir, args.output_base)
     
     if not data_list:
         print("[ERROR] No data processed. Exiting.")
         return
         
-    output_dir = os.path.join(root_dir, "results", "matrix")
+    output_dir = os.path.join(root_dir, args.output_base)
     generate_plots(data_list, output_dir)
     write_summary_markdown(data_list, os.path.join(output_dir, "summary.md"))
-    print("[ANALYZE] Analysis complete. Plots and summary.md saved successfully.")
+    print(f"[ANALYZE] Analysis complete. Plots and summary.md saved successfully in {output_dir}.")
 
 if __name__ == "__main__":
     main()

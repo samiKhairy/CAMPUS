@@ -22,7 +22,7 @@
 
 \section{What this is about}
 
-For the CAMPUS project, I needed to evaluate which protocol to use for the bidirectional device--edge communication layer (covering both the downlink from the edge server and the uplink/acknowledgements from the devices). The three candidates are:
+For the CAMPUS project, we needed to evaluate which protocol to use for the bidirectional device--edge communication layer (covering both the downlink from the edge server and the uplink/acknowledgements from the devices). The three candidates are:
 
 \begin{itemize}
     \item \textbf{gRPC} (over HTTP/2) --- the edge server opens a direct bidirectional stream to each OBU. No broker in the middle. Uses Protocol Buffers for serialization.
@@ -96,18 +96,16 @@ On the local bridge network with no artificial delay, this measures pure protoco
 \toprule
 Protocol & p50 (ms) & p95 (ms) & p99 (ms) & Mean (ms) \\
 \midrule
-Zenoh (TCP)   & 0.99 & 2.56 & 3.32 & 1.22 \\
-Zenoh (QUIC)  & 0.91 & 1.72 & 2.86 & 1.03 \\
-gRPC (TCP)    & 2.26 & 4.37 & 4.66 & 2.52 \\
-MQTT (TCP)    & 46.23 & 48.78 & 49.51 & 46.00 \\
-MQTT (QUIC)   & 5.59 & 7.81 & 10.79 & 5.34 \\
+Zenoh & 0.99 & 2.56 & 3.32 & 1.22 \\
+gRPC  & 2.26 & 4.37 & 4.66 & 2.52 \\
+MQTT  & 46.23 & 48.78 & 49.51 & 46.00 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Zenoh and gRPC are both sub-5~ms, with Zenoh (QUIC) registering the lowest baseline at 1.03~ms mean. The interesting comparison is MQTT: standard MQTT-over-TCP shows a consistent $\sim$46~ms latency due to the \texttt{paho-mqtt} client's internal event loop polling timeout. However, when using MQTT-over-QUIC (via NanoSDK and EMQX), this polling delay is completely eliminated, dropping the baseline RTT to \textbf{5.59~ms (p50)} and \textbf{7.81~ms (p95)}. This confirms that transport and client stack refactoring can bypass TCP-bound polling limitations entirely.
+Zenoh and gRPC are both sub-5~ms. The interesting thing is MQTT: even with zero network delay, it shows a consistent $\sim$46~ms latency. This appears to be related to the \texttt{paho-mqtt} client's internal event loop scheduling combined with QoS~1 PUBACK roundtrip overhead; I did not isolate the individual contribution of each component. This is a client library implementation detail, not a protocol limitation --- but it's what you get out of the box with the standard Python client.
 
-As I scale to $N=10$ on the clean network, gRPC's p95 rises to about 6--9~ms, while Zenoh (TCP) and Zenoh (QUIC) stay under 4~ms and 2.6~ms respectively. MQTT (TCP) stays flat at $\sim$47--50~ms, dominated by the polling timeout (with a bimodal distribution at $N=10$, 100~B where median drops to $\sim$8~ms). MQTT (QUIC) scales gracefully, with p50 at \textbf{7.90~ms} and p95 at \textbf{15.04~ms} even at $N=10$ with 2000~B payload.
+As I scale to $N=10$ on the clean network, gRPC's p95 rises to about 6--9~ms (expected, since 10 concurrent streams share CPU time), while Zenoh stays under 4~ms. MQTT generally stays flat at $\sim$47--50~ms regardless of $N$, dominated by the polling timeout. However, in the $N=10$, 100~B configuration, MQTT shows a bimodal latency distribution with the median (p50) dropping to $\sim$6--8~ms while the p95 remains at $\sim$49~ms. This appears to be a \texttt{paho-mqtt} scheduling artifact under high broker activity where the client loop thread processes queued messages more aggressively, bypassing the usual event loop sleep timeout, and warrants further investigation.
 
 \subsection{Good 5G conditions}
 
@@ -121,35 +119,31 @@ Under the \texttt{good\_5g} profile (40~ms theoretical RTT floor, 0.1\% loss), I
 \toprule
 Protocol & $N$ & Loss (\%) & p50 (ms) & p95 (ms) & p99 (ms) \\
 \midrule
-Zenoh (TCP)   & 5  & 4.3 & 43.45 & 45.97 & 47.11 \\
-Zenoh (QUIC)  & 5  & 0.6 & 41.07 & 43.47 & 44.63 \\
-gRPC (TCP)    & 5  & 4.7 & 43.13 & 46.58 & 48.93 \\
-MQTT (TCP)    & 5  & 3.4 & 87.07 & 94.13 & 128.81 \\
-MQTT (QUIC)   & 5  & 0.3 & 43.66 & 46.54 & 49.83 \\
+Zenoh & 5  & 4.3 & 43.45 & 45.97 & 47.11 \\
+gRPC  & 5  & 4.7 & 43.13 & 46.58 & 48.93 \\
+MQTT  & 5  & 3.4 & 87.07 & 94.13 & 128.81 \\
 \midrule
-Zenoh (TCP)   & 10 & 4.4 & 43.05 & 45.74 & 46.88 \\
-Zenoh (QUIC)  & 10 & 0.8 & 40.93 & 43.48 & 45.04 \\
-gRPC (TCP)    & 10 & 6.2 & 42.19 & 45.21 & 47.75 \\
-MQTT (TCP)    & 10 & 2.9 & 84.43 & 115.35 & 128.64 \\
-MQTT (QUIC)   & 10 & 0.4 & 44.76 & 50.48 & 63.15 \\
+Zenoh & 10 & 4.4 & 43.05 & 45.74 & 46.88 \\
+gRPC  & 10 & 6.2 & 42.19 & 45.21 & 47.75 \\
+MQTT  & 10 & 2.9 & 84.43 & 115.35 & 128.64 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Zenoh (QUIC) achieves the best performance here, sitting almost exactly on the 40~ms floor (40.93~ms p50 at $N=10$) with the lowest packet loss (0.8\%). gRPC and Zenoh (TCP) follow closely at ~42--43~ms. MQTT (TCP) carries the constant offset of the client polling delay, registering ~84~ms. Importantly, MQTT (QUIC) matches the other protocols' performance, sitting at \textbf{44.76~ms (p50)} and \textbf{50.48~ms (p95)} with exceptionally low packet loss (0.4\%).
+Zenoh and gRPC both sit right on the 40~ms floor. Even going from $N=5$ to $N=10$, their latencies barely move. MQTT is at about 84--87~ms (the 40~ms network RTT + the $\sim$45~ms client polling overhead), with tail latencies starting to creep up to 128~ms at $N=10$.
 
 Figure~\ref{fig:latency_vs_n} shows how the p95 latency evolves as $N$ scales under these conditions.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.75\textwidth]{results/matrix/latency_vs_N.png}
-\caption{p95 latency vs.\ number of devices under good 5G (100~B, 10~Hz). Zenoh and gRPC stay flat; MQTT (TCP) carries a constant offset from the polling delay, whereas MQTT (QUIC) performs near-optimally.}
+\caption{p95 latency vs.\ number of devices under good 5G (100~B, 10~Hz). Zenoh and gRPC stay flat; MQTT carries a constant offset from the polling delay.}
 \label{fig:latency_vs_n}
 \end{figure}
 
-\subsection{Degraded 5G conditions --- where MQTT (TCP) breaks, and QUIC rescues}
+\subsection{Degraded 5G conditions --- where MQTT breaks}
 
-The \texttt{degraded\_5g} profile adds 160~ms RTT and 1\% packet loss. At 10~Hz with 10 devices, the edge server pushes 100 messages per second.
+This is where things get interesting. The \texttt{degraded\_5g} profile adds 160~ms RTT and 1\% packet loss. At 10~Hz with 10 devices, the edge server is pushing 100 messages per second through the network.
 
 \begin{table}[H]
 \centering
@@ -159,33 +153,29 @@ The \texttt{degraded\_5g} profile adds 160~ms RTT and 1\% packet loss. At 10~Hz 
 \toprule
 Protocol & $N$ & Loss (\%) & p50 (ms) & p95 (ms) & p99 (ms) \\
 \midrule
-Zenoh (TCP)   & 5  & 1.8 & 164.00 & 217.06 & 411.67 \\
-Zenoh (QUIC)  & 5  & 0.5 & 162.01 & 214.81 & 406.89 \\
-gRPC (TCP)    & 5  & 4.1 & 164.85 & 267.43 & 429.83 \\
-MQTT (TCP)    & 5  & 2.9 & 11{,}740 & 22{,}015 & 23{,}061 \\
-MQTT (QUIC)   & 5  & 0.3 & 178.99 & 270.04 & 342.76 \\
+Zenoh & 5  & 1.8 & 164.00 & 217.06 & 411.67 \\
+gRPC  & 5  & 4.1 & 164.85 & 267.43 & 429.83 \\
+MQTT  & 5  & 2.9 & 11{,}740 & 22{,}015 & 23{,}061 \\
 \midrule
-Zenoh (TCP)   & 10 & 1.8 & 164.28 & 282.93 & 440.10 \\
-Zenoh (QUIC)  & 10 & 0.6 & 162.61 & 283.24 & 422.46 \\
-gRPC (TCP)    & 10 & 5.7 & 164.01 & 305.37 & 444.23 \\
-MQTT (TCP)    & 10 & 4.0 & 31{,}957 & 58{,}370 & 61{,}375 \\
-MQTT (QUIC)   & 10 & 0.4 & 197.97 & 369.21 & 458.69 \\
+Zenoh & 10 & 1.8 & 164.28 & 282.93 & 440.10 \\
+gRPC  & 10 & 5.7 & 164.01 & 305.37 & 444.23 \\
+MQTT  & 10 & 4.0 & 31{,}957 & 58{,}370 & 61{,}375 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Zenoh (TCP), Zenoh (QUIC), and gRPC all handle the degraded conditions well, maintaining their median latency near the 160~ms floor. Zenoh (QUIC) shows slightly lower tail latencies (422.46~ms p99 at $N=10$) and significantly lower packet loss (0.6\% vs 1.8\% for TCP).
+Zenoh and gRPC handle it fine. Their median latency sits right at the 160~ms floor, and the p99 spikes to about 440~ms, which is just TCP doing its normal retransmission recovery when a packet gets lost. That's expected and acceptable.
 
-MQTT (TCP) experiences complete queue collapse and buffer bloat under loss, with median latency exploding to \textbf{32 seconds} and p95 reaching \textbf{58 seconds}.
+MQTT is a different story. At $N=10$, the \textbf{median} latency is 32 seconds and the p95 is 58 seconds. The protocol is unusable.
 
-However, \textbf{MQTT (QUIC) completely rescues this failure mode}. Because QUIC eliminates TCP head-of-line blocking, packet drops on one device's stream do not block the entire connection or stall other message deliveries. MQTT (QUIC) registers a median RTT of only \textbf{197.97~ms} and a p95 of \textbf{369.21~ms} at $N=10$, achieving a \textbf{150$\times$ latency reduction} compared to MQTT (TCP) while maintaining a packet loss rate of just \textbf{0.4\%}.
+At $N=5$ with the same payload at \textit{5~Hz} (half the message rate), MQTT's p50 is already 576~ms. At 10~Hz it jumps to 11.7 seconds. This highlights the nonlinear nature of the queue collapse under packet loss: doubling the message rate causes the median latency to jump by more than 20$\times$ as TCP retransmissions cascade and the broker queue fails to drain.
 
 Figure~\ref{fig:cdf} shows the latency CDF, and Figure~\ref{fig:profile} compares the p95 across network profiles.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.75\textwidth]{results/matrix/latency_cdf.png}
-\caption{RTT latency CDF under good 5G conditions. The MQTT (TCP) curve is shifted right by $\sim$45~ms, whereas MQTT (QUIC) aligns with Zenoh and gRPC.}
+\caption{RTT latency CDF under good 5G conditions. The MQTT curve is shifted right by $\sim$45~ms relative to gRPC and Zenoh.}
 \label{fig:cdf}
 \end{figure}
 
@@ -196,39 +186,50 @@ Figure~\ref{fig:cdf} shows the latency CDF, and Figure~\ref{fig:profile} compare
 \label{fig:profile}
 \end{figure}
 
-\section{Why MQTT collapses under TCP, and how QUIC fixes it}
+\section{Why MQTT collapses under loss}
 
-The root cause of MQTT (TCP) queue collapse is TCP's head-of-line (HOL) blocking. Under QoS~1, the broker needs a \texttt{PUBACK} from the device before marking a message as delivered. When a packet is lost:
+The root cause is straightforward: MQTT uses a central broker (Mosquitto). All messages from the edge server pass through the broker before being forwarded to the devices. Under QoS~1, the broker needs a \texttt{PUBACK} from the device before marking the message as delivered.
+
+When 1\% of packets are lost on the link:
 \begin{enumerate}
-    \item TCP detects the loss and blocks socket delivery until retransmission completes.
-    \item All subsequent messages queue up behind the lost packet in the single TCP socket buffer.
-    \item Meanwhile, the edge server keeps publishing. These accumulate in the broker's queue, triggering severe buffer bloat.
+    \item TCP detects the loss and retransmits. During this time, the TCP send window shrinks and the socket blocks.
+    \item The QoS~1 handshake stalls --- the broker is waiting for an ack that's stuck behind a TCP retransmission.
+    \item Meanwhile, the edge server keeps publishing at 10~Hz. Those messages accumulate in the broker's internal queue.
+    \item Once the broker queue starts to grow, the system enters a regime where new messages cannot drain faster than they arrive, and latency grows superlinearly until the run ends.
 \end{enumerate}
 
-\textbf{QUIC avoids this completely}. In QUIC, each stream is independent. If a packet carrying a message on stream A is lost, only stream A is blocked. Streams B, C, and D continue delivering packets out-of-order. This prevents TCP-level HOL blocking, allowing the broker's queue to drain continuously and maintaining sub-second latency even under packet loss.
+This is classic buffer bloat, exacerbated by TCP's congestion control and retransmission timeouts backing off under packet loss. As cascading retransmissions stall the connection, the queue grows superlinearly. Doubling the experiment duration or the message rate causes a nonlinear explosion in tail latency.
 
-gRPC avoids this under TCP because it opens a separate HTTP/2 TCP connection directly to each device, isolating the queuing. Zenoh's router utilizes a lightweight, multiplexed session management layer that prevents serializing all client traffic through a single blocking buffer.
+gRPC avoids this because it opens a separate HTTP/2 stream directly to each device. If device~3's TCP connection stalls due to loss, it has zero effect on the streams to devices~1, 2, 4, etc. There's no shared queue.
+
+Zenoh uses a router, but its internal architecture is designed differently --- it has lightweight session management and doesn't serialize all client traffic through a single TCP buffer the way Mosquitto does.
 
 \section{What this means for CAMPUS}
 
 \begin{enumerate}
-    \item \textbf{Do not use standard MQTT-over-TCP for safety-critical bidirectional communication.} If a vehicle moves to a cell edge where packet loss rises, a central broker over TCP will experience queue collapse.
-    
-    \item \textbf{MQTT-over-QUIC is a viable candidate.} With QUIC, MQTT achieves latency characteristics competitive with gRPC and Zenoh, avoiding queue collapse and dropping baseline RTT from 46~ms to ~5~ms.
-    
-    \item \textbf{Zenoh remains the top candidate for pub/sub.} Zenoh (QUIC) offers the lowest baseline overhead (1.03~ms mean) and optimal resilience under degraded network profiles with minimal packet loss.
-    
-    \item \textbf{gRPC is excellent for point-to-point data services.} gRPC's independent streams ensure solid connection isolation for heavier services like HD map streaming.
+    \item \textbf{Don't use MQTT for real-time bidirectional communication.} If the edge is exchanging messages with the devices at 10~Hz and a vehicle moves to the edge of cell coverage (where packet loss goes up), the broker queue will blow up. For safety-critical messages like collision warnings, a 30-second delay is the same as no message at all.
+
+    \item \textbf{Zenoh looks like the best fit for pub/sub use cases.} It has the lowest baseline overhead ($\sim$1~ms), scales cleanly to 10 devices with no visible latency increase, and handles degraded conditions well. It also supports pub/sub topic filtering, which is what I need for the selective downlink.
+
+    \item \textbf{gRPC is a good choice for point-to-point services.} For things like HD map streaming or large file uploads where a direct connection with flow control is needed, gRPC's stream isolation is a strong advantage.
+
+    \item \textbf{The Paho-MQTT polling delay is fixable}, but it's worth knowing about. If MQTT is used for non-critical telemetry uplinks, switching to an async client (like \texttt{aiomqtt} or \texttt{gmqtt}) would eliminate the 45~ms floor. But the broker queue issue under loss is architectural --- you can't fix that by swapping the client library.
 \end{enumerate}
 
 \section{Limitations and next steps}
 
+A few things to keep in mind about these results:
+
 \begin{itemize}
-    \item The network impairment is synthetic (\texttt{tc netem} on a Docker bridge). I am planning to validate these results on a local 5G SA setup on my own machine using Open5GS + UERANSIM, and later on the physical testbed.
-    
-    \item Each configuration was run once for 30 seconds. Repeating 3--5 times would yield more rigorous statistics.
-    
-    \item We now have concrete QUIC data (Zenoh over QUIC and MQTT over QUIC via NanoSDK). The next step is to profile the CPU and memory consumption of these UDP-based QUIC implementations compared to their TCP counterparts, as QUIC packet processing in user space can sometimes carry higher CPU overhead.
+    \item The network impairment is synthetic (\texttt{tc netem} on a Docker bridge). It gives clean, reproducible protocol-level comparisons, but it doesn't model real 5G radio behavior (fading, HARQ, RLC segmentation, core network traversal). I'm planning to first validate these results on a local 5G SA setup on my own machine using Open5GS + UERANSIM, and later we can repeat the tests on the lab's physical 5G testbed as well.
+
+    \item Each configuration was run once for 30 seconds. For a final report, running each 3--5 times and reporting the median would be more rigorous.
+
+    \item I didn't measure CPU or memory usage of the containers. Resource profiling is on the list for the next round.
+
+    \item MQTT was tested with QoS~1 (at-least-once) and JSON payloads. A QoS~0 (fire-and-forget) baseline would help separate the broker routing overhead from the QoS handshake cost. That's planned for the next iteration.
+
+    \item I haven't tested QUIC-based transports yet (Zenoh over QUIC, or NanoMQ over QUIC). QUIC avoids TCP head-of-line blocking at the transport layer, which could change the picture for MQTT-like protocols. That's the next experiment on the roadmap.
 \end{itemize}
 
 \end{document}

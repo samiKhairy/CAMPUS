@@ -21,7 +21,7 @@ services:
       dockerfile: docker/Dockerfile.edge
     container_name: edge-node
     environment:
-      - MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
       - TARGET_DEVICES=device-1,device-2
       - PAYLOAD_BYTES=100
       - INTERVAL_SEC=0.1
@@ -42,7 +42,7 @@ services:
     container_name: device-1
     environment:
       - DEVICE_ID=device-1
-      - MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
     depends_on:
       - mqtt-broker
     cap_add:
@@ -57,7 +57,7 @@ services:
     container_name: device-2
     environment:
       - DEVICE_ID=device-2
-      - MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
     depends_on:
       - mqtt-broker
     cap_add:

@@ -221,55 +221,6 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "networks": ["campus-net"]
             }
 
-    elif protocol == "mqtt-tcp-c":
-        # 1. NanoMQ Broker (TCP only for this variant)
-        compose["services"]["mqtt-broker"] = {
-            "image": "emqx/nanomq:latest-full",
-            "ports": ["1883:1883"],
-            "volumes": [
-                f"{os.path.join(abs_root_dir, 'mqtt-quic', 'nanomq.conf')}:/etc/nanomq.conf",
-                f"{os.path.join(abs_root_dir, 'mqtt-quic', 'nanomq.conf')}:/usr/local/nanomq/nanomq.conf",
-                f"{os.path.join(abs_root_dir, 'certs')}:/etc/certs"
-            ],
-            "command": ["nanomq", "start", "--conf", "/etc/nanomq.conf"],
-            "networks": ["campus-net"]
-        }
-        
-        # 2. Edge Node (C client)
-        compose["services"]["edge-node"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "mqtt-quic"),
-                "dockerfile": "docker/Dockerfile.edge"
-            },
-            "environment": [
-                "MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883",
-                f"TARGET_DEVICES={devices_str}",
-                f"PAYLOAD_BYTES={payload_bytes}",
-                f"INTERVAL_SEC={interval_sec}",
-                f"RUN_DURATION={run_duration}",
-                f"OUTPUT_CSV=/app/results/{filename}"
-            ],
-            "volumes": [f"{abs_output_dir}:/app/results"],
-            "depends_on": ["mqtt-broker"],
-            "cap_add": ["NET_ADMIN"],
-            "networks": ["campus-net"]
-        }
-        
-        # 3. Devices (C client)
-        for dev in devices_list:
-            compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "mqtt-quic"),
-                    "dockerfile": "docker/Dockerfile.device"
-                },
-                "environment": [
-                    f"DEVICE_ID={dev}",
-                    "MQTT_BROKER_URL=mqtt-tcp://mqtt-broker:1883"
-                ],
-                "depends_on": ["mqtt-broker"],
-                "cap_add": ["NET_ADMIN"],
-                "networks": ["campus-net"]
-            }
 
     elif protocol == "mqtt-quic":
         # 1. EMQX Broker - the only broker that supports accepting incoming MQTT-over-QUIC
@@ -370,12 +321,13 @@ def apply_netem(container, impairment):
 
 def main():
     parser = argparse.ArgumentParser(description="Unified Experiment Matrix Runner")
-    parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-tcp-c,mqtt-quic", help="Comma-separated protocols")
+    parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-quic", help="Comma-separated protocols")
     parser.add_argument("--profiles", default="clean,good_5g,degraded_5g", help="Comma-separated profiles")
-    parser.add_argument("--devices", default="1,2,5,10", help="Comma-separated device counts N")
+    parser.add_argument("--devices", default="1,2,5,10,20,50", help="Comma-separated device counts N")
     parser.add_argument("--payloads", default="100,2000", help="Comma-separated payloads in bytes")
     parser.add_argument("--rates", default="5,10", help="Comma-separated rates in Hz")
     parser.add_argument("--duration", type=int, default=30, help="Duration in seconds per run")
+    parser.add_argument("--output-base", default="results/unified", help="Base output directory")
     parser.add_argument("--dry-run", action="store_true", help="Print plans without running")
     args = parser.parse_args()
 
@@ -416,7 +368,7 @@ def main():
                         run_idx += 1
                         interval = 1.0 / rate
                         filename = f"N_{n}_pay_{payload}_rate_{rate}.csv"
-                        output_dir = os.path.join(root_dir, "results", "matrix", protocol, profile)
+                        output_dir = os.path.join(root_dir, args.output_base, protocol, profile)
                         
                         print(f"[{run_idx}/{total_runs}] Running {protocol.upper()} | {profile.upper()} | N={n} | Payload={payload}B | Rate={rate}Hz")
                         

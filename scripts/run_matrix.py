@@ -47,13 +47,12 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
     abs_output_dir = os.path.abspath(output_dir)
     abs_root_dir = os.path.abspath(root_dir)
 
+    DOCKER_HUB = "samiullahkhairy"
+
     if protocol == "grpc":
         # 1. Edge Server
         compose["services"]["grpc-server"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "gRPC"),
-                "dockerfile": "docker/Dockerfile.server"
-            },
+            "image": f"{DOCKER_HUB}/campus-grpc-edge:latest",
             "ports": ["50051:50051"],
             "environment": [
                 f"TARGET_DEVICES={devices_str}",
@@ -69,12 +68,9 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         }
         
         # 2. Devices
-        for dev in devices_list:
+        for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "gRPC"),
-                    "dockerfile": "docker/Dockerfile.client"
-                },
+                "image": f"{DOCKER_HUB}/campus-grpc-device:latest",
                 "command": ["python", "client.py", dev, "--server", "grpc-server:50051"],
                 "environment": [
                     "GRPC_SERVER=grpc-server:50051",
@@ -84,7 +80,6 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
-
     elif protocol == "zenoh":
         # 1. Zenoh Router
         compose["services"]["zenoh-router"] = {
@@ -95,10 +90,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "zenoh"),
-                "dockerfile": "docker/Dockerfile.edge"
-            },
+            "image": f"{DOCKER_HUB}/campus-zenoh-edge:latest",
             "environment": [
                 "ZENOH_ROUTER=tcp/zenoh-router:7447",
                 f"TARGET_DEVICES={devices_str}",
@@ -114,18 +106,14 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         }
         
         # 3. Devices
-        for dev in devices_list:
+        for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "zenoh"),
-                    "dockerfile": "docker/Dockerfile.device"
-                },
+                "image": f"{DOCKER_HUB}/campus-zenoh-device:latest",
                 "command": ["python", "device_zenoh.py", dev, "--router", "tcp/zenoh-router:7447"],
                 "depends_on": ["zenoh-router"],
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
-
     elif protocol == "zenoh-quic":
         # 1. Zenoh Router (QUIC/UDP with TLS certs)
         compose["services"]["zenoh-router"] = {
@@ -143,10 +131,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "zenoh-quic"),
-                "dockerfile": "docker/Dockerfile.edge"
-            },
+            "image": f"{DOCKER_HUB}/campus-zenoh-quic-edge:latest",
             "environment": [
                 "ZENOH_ROUTER=quic/zenoh-router:7447",
                 f"TARGET_DEVICES={devices_str}",
@@ -165,19 +150,15 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         }
         
         # 3. Devices
-        for dev in devices_list:
+        for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "zenoh-quic"),
-                    "dockerfile": "docker/Dockerfile.device"
-                },
+                "image": f"{DOCKER_HUB}/campus-zenoh-quic-device:latest",
                 "command": ["python", "device_zenoh.py", dev, "--router", "quic/zenoh-router:7447"],
                 "volumes": [f"{os.path.join(abs_root_dir, 'certs')}:/etc/zenoh"],
                 "depends_on": ["zenoh-router"],
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
-
     elif protocol == "mqtt":
         # 1. Mosquitto Broker
         compose["services"]["mqtt-broker"] = {
@@ -189,10 +170,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "mqtt"),
-                "dockerfile": "docker/Dockerfile.edge"
-            },
+            "image": f"{DOCKER_HUB}/campus-mqtt-edge:latest",
             "environment": [
                 "MQTT_BROKER=mqtt-broker:1883",
                 f"TARGET_DEVICES={devices_str}",
@@ -209,19 +187,14 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         }
         
         # 3. Devices
-        for dev in devices_list:
+        for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "mqtt"),
-                    "dockerfile": "docker/Dockerfile.device"
-                },
+                "image": f"{DOCKER_HUB}/campus-mqtt-device:latest",
                 "command": ["python", "device_mqtt.py", dev, "--broker", "mqtt-broker:1883"],
                 "depends_on": ["mqtt-broker"],
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
-
-
     elif protocol == "mqtt-quic":
         # 1. EMQX Broker - the only broker that supports accepting incoming MQTT-over-QUIC
         #    NanoMQ only supports QUIC for outbound bridging, not as a server listener.
@@ -248,10 +221,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node (C client using NanoSDK with QUIC transport)
         compose["services"]["edge-node"] = {
-            "build": {
-                "context": os.path.join(abs_root_dir, "mqtt-quic"),
-                "dockerfile": "docker/Dockerfile.edge"
-            },
+            "image": f"{DOCKER_HUB}/campus-mqtt-quic-edge:latest",
             "environment": [
                 "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567",
                 f"TARGET_DEVICES={devices_str}",
@@ -272,12 +242,9 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         }
         
         # 3. Devices (C client using NanoSDK with QUIC transport)
-        for dev in devices_list:
+        for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "build": {
-                    "context": os.path.join(abs_root_dir, "mqtt-quic"),
-                    "dockerfile": "docker/Dockerfile.device"
-                },
+                "image": f"{DOCKER_HUB}/campus-mqtt-quic-device:latest",
                 "environment": [
                     f"DEVICE_ID={dev}",
                     "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567"
@@ -290,7 +257,6 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
-
     compose["networks"] = {"campus-net": {"driver": "bridge"}}
     return compose
 
@@ -329,6 +295,8 @@ def main():
     parser.add_argument("--duration", type=int, default=30, help="Duration in seconds per run")
     parser.add_argument("--output-base", default="results/unified", help="Base output directory")
     parser.add_argument("--dry-run", action="store_true", help="Print plans without running")
+    parser.add_argument("--start-run", type=int, default=1, help="Run index to start from (1-based)")
+    parser.add_argument("--pull", default="missing", choices=["always", "missing", "never"], help="Docker pull policy")
     args = parser.parse_args()
 
     # Parse sweep dimensions
@@ -366,6 +334,8 @@ def main():
                 for payload in payloads:
                     for rate in rates:
                         run_idx += 1
+                        if run_idx < args.start_run:
+                            continue
                         interval = 1.0 / rate
                         filename = f"N_{n}_pay_{payload}_rate_{rate}.csv"
                         output_dir = os.path.join(root_dir, args.output_base, protocol, profile)
@@ -403,7 +373,7 @@ def main():
                         # Spin up services
                         print("  -> Spinning up docker services...")
                         res_up = subprocess.run(
-                            ["docker", "compose", "-f", temp_compose_path, "up", "-d", "--build"],
+                            ["docker", "compose", "-f", temp_compose_path, "up", "-d", "--build", "--pull", args.pull],
                             capture_output=True, text=True
                         )
                         if res_up.returncode != 0:
@@ -455,7 +425,7 @@ def main():
                         print("  -> Shutting down and cleaning up containers...")
                         subprocess.run(
                             ["docker", "compose", "-f", temp_compose_path, "down"],
-                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                         )
                         
                         # Remove temporary compose file

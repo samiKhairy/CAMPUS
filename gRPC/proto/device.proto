@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package campus;
+
+
+message DeviceInfo {
+  string device_id = 1;
+}
+
+message RegisterAck {
+  bool success = 1;
+}
+
+message Command {
+  string device_id = 1;
+  string payload = 2;
+  int64 ts_edge_ns = 3;
+}
+
+message CommandAck {
+  string device_id = 1;
+  string status = 2;
+  int64 ts_device_ns = 3;
+  int64 ts_edge_ns = 4;
+}
+
+service DeviceService {
+  rpc Register(DeviceInfo) returns (RegisterAck);
+  rpc CommandStream(stream CommandAck) returns (stream Command);
+}

@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  zenoh-router:
+    image: eclipse/zenoh:latest
+    container_name: zenoh-router
+    command:
+      - "--listen"
+      - "quic/0.0.0.0:7447"
+      - "--no-multicast-scouting"
+      - "--cfg"
+      - "transport/link/tls/listen_certificate:\"/etc/zenoh/cert.pem\""
+      - "--cfg"
+      - "transport/link/tls/listen_private_key:\"/etc/zenoh/key.pem\""
+    ports:
+      - "7447:7447/udp"
+    volumes:
+      - ../certs:/etc/zenoh
+    networks:
+      - campus-net
+
+  edge-node:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.edge
+    container_name: edge-node
+    environment:
+      - ZENOH_ROUTER=quic/zenoh-router:7447
+      - PAYLOAD_BYTES=100
+      - INTERVAL_SEC=1.0
+      - TARGET_DEVICES=device-1,device-2
+    volumes:
+      - ./results:/app/results
+      - ../certs:/etc/zenoh
+    depends_on:
+      - zenoh-router
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  device-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-1
+    command: ["python", "device_zenoh.py", "device-1"]
+    environment:
+      - ZENOH_ROUTER=quic/zenoh-router:7447
+    volumes:
+      - ../certs:/etc/zenoh
+    depends_on:
+      - zenoh-router
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  device-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-2
+    command: ["python", "device_zenoh.py", "device-2"]
+    environment:
+      - ZENOH_ROUTER=quic/zenoh-router:7447
+    volumes:
+      - ../certs:/etc/zenoh
+    depends_on:
+      - zenoh-router
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+networks:
+  campus-net:
+    driver: bridge

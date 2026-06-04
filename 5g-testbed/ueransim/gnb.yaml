@@ -1,0 +1,28 @@
+mcc: '001'          # Mobile Country Code (999 = private/test network)
+mnc: '01'           # Mobile Network Code
+tac: 1              # Tracking Area Code (must match AMF config)
+nci: '0x00000001'   # NR Cell Identity
+idLength: 32        # Length of gNB ID
+gNodeBId: '0x000102'
+
+# Bind IP for UERANSIM gNodeB
+linkIp: gnb-simulator
+ngapIp: gnb-simulator
+gtpIp: gnb-simulator
+
+# IP of the AMF container in the 5G Core (N2 interface)
+amfConfigs:
+  - address: open5gs-amf
+    port: 38412
+
+# SCTP stream ID bypass for compatibility
+ignoreStreamIds: true
+
+# Supported frequencies / network slices
+slices:
+  - sst: 1
+    sd: 0x000001
+
+# Radio link frequency parameters
+customFreqRx: 869000
+customFreqTx: 869000

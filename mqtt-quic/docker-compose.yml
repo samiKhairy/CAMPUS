@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mqtt-broker:
+    image: emqx/nanomq:latest-full
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+      - "14567:14567/udp"
+    volumes:
+      - ./nanomq.conf:/etc/nanomq.conf
+      - ./nanomq.conf:/usr/local/nanomq/nanomq.conf
+      - ../certs:/etc/certs
+    command: ["nanomq", "start", "--conf", "/etc/nanomq.conf"]
+    networks:
+      - campus-net
+
+  edge-node:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.edge
+    container_name: edge-node
+    environment:
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
+      - TARGET_DEVICES=device-1,device-2
+      - PAYLOAD_BYTES=100
+      - INTERVAL_SEC=0.1
+      - RUN_DURATION=30
+    volumes:
+      - ./results:/app/results
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  device-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-1
+    environment:
+      - DEVICE_ID=device-1
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+  device-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.device
+    container_name: device-2
+    environment:
+      - DEVICE_ID=device-2
+      - MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567
+    depends_on:
+      - mqtt-broker
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - campus-net
+
+networks:
+  campus-net:
+    driver: bridge

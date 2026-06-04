@@ -1,0 +1,13 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir grpcio protobuf
+
+COPY server_grpc.py .
+COPY device_pb2.py .
+COPY device_pb2_grpc.py .
+
+EXPOSE 50051
+
+CMD ["python", "server_grpc.py"]

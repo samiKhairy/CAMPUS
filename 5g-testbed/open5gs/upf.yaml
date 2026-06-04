@@ -1,0 +1,18 @@
+global:
+  max:
+    ue: 1024
+
+logger:
+  level: info
+
+parameter:
+
+db_uri: mongodb://mongodb:27017/open5gs
+
+upf:
+  pfcp:
+    - address: open5gs-upf
+  gtpu:
+    - address: open5gs-upf
+  pdn:
+    - address: 10.45.0.1/16 # Gateway address for 5G devices

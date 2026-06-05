@@ -5,6 +5,9 @@ import time
 import json
 import zenoh
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 
 # this function is used to parse the arguments passed to the script 
 def parse_args():
@@ -71,7 +74,8 @@ def on_command(sample):
     ts_device_ns = time.monotonic_ns()
 
     # print the command
-    print(f"[{device_id}] Received command: {data['payload']}")
+    if VERBOSE:
+        print(f"[{device_id}] Received command: {data['payload']}")
 
     # create ack dictionary 
     # status is OK which means the command was received successfully 

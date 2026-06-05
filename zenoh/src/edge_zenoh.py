@@ -7,6 +7,9 @@ import sys
 import time
 import zenoh
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 
 # this function is used to parse the arguments passed to the script , parsing the arguments means checking for the arguments and processing them 
 # for example the arguments can be the router address , device id , duration , payload size , interval , output file path 
@@ -193,7 +196,8 @@ try:
             
             pubs[dev].put(json.dumps(payload))
             sent_counts[dev] += 1
-            print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+            if VERBOSE:
+                print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
             
         time.sleep(INTERVAL_SEC)
 

@@ -10,6 +10,9 @@ import grpc
 import device_pb2
 import device_pb2_grpc
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 def parse_args():
     parser = argparse.ArgumentParser(description="gRPC Edge Server")
     parser.add_argument(
@@ -224,7 +227,8 @@ def serve():
                 success = service.send_command(dev, payload_str, ts_edge_ns)
                 if success:
                     sent_counts[dev] += 1
-                    print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+                    if VERBOSE:
+                        print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
                 else:
                     # Device is not yet connected/registered
                     pass

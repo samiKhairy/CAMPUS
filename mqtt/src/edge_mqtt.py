@@ -7,6 +7,9 @@ import sys
 import time
 import paho.mqtt.client as mqtt
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MQTT Edge Node")
@@ -211,7 +214,8 @@ try:
             cmd_topic = f"campus/cmd/{dev}"
             client.publish(cmd_topic, json.dumps(payload), qos=MQTT_QOS)
             sent_counts[dev] += 1
-            print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+            if VERBOSE:
+                print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
             
         time.sleep(INTERVAL_SEC)
 

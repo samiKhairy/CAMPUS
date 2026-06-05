@@ -32,6 +32,8 @@ static nng_socket    g_sock;
 static DeviceStats   g_stats[MAX_DEVICES];
 static int           g_n_devices = 0;
 static nng_aio      *g_recv_aio;
+/* VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small. */
+static int           g_verbose = 0;
 
 static void sig_handler(int sig) { (void)sig; running = 0; }
 
@@ -77,7 +79,8 @@ static void process_msg(nng_msg *msg, uint64_t recv_ns) {
                     ds->records[ds->count].latency_ms = rtt_ms;
                     ds->count++;
                     pthread_mutex_unlock(&ds->mu);
-                    printf("[EDGE] Ack from %s -> RTT=%.2f ms\n", dev_id, rtt_ms);
+                    if (g_verbose)
+                        printf("[EDGE] Ack from %s -> RTT=%.2f ms\n", dev_id, rtt_ms);
                 }
             }
             cJSON_Delete(root);
@@ -143,6 +146,7 @@ int main(void) {
     double      run_duration  = atof(getenv("RUN_DURATION")    ? getenv("RUN_DURATION")    : "30.0");
     double      start_delay   = atof(getenv("START_DELAY_SEC") ? getenv("START_DELAY_SEC") : "5.0");
     const char *output_csv    = getenv("OUTPUT_CSV");
+    g_verbose = (getenv("VERBOSE") && atoi(getenv("VERBOSE")) == 1);
 
     if (!broker_url)  broker_url  = "mqtt-tcp://localhost:1883";
     if (!devices_env) devices_env = "device-1";

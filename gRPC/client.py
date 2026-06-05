@@ -8,6 +8,9 @@ import grpc
 import device_pb2
 import device_pb2_grpc
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 def parse_args():
     parser = argparse.ArgumentParser(description="gRPC Device Simulator")
     parser.add_argument(
@@ -72,7 +75,8 @@ def run_client():
         # Process incoming commands from the server
         for command in response_iterator:
             ts_device_ns = time.monotonic_ns()
-            print(f"[{device_id}] Received command: {len(command.payload)} bytes")
+            if VERBOSE:
+                print(f"[{device_id}] Received command: {len(command.payload)} bytes")
             
             # Echo back the send timestamp ts_edge_ns for RTT calculation
             ack = device_pb2.CommandAck(

@@ -60,6 +60,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"INTERVAL_SEC={interval_sec}",
                 f"RUN_DURATION={run_duration}",
                 "PYTHONUNBUFFERED=1",
+                "GRPC_VERBOSITY=ERROR",
                 f"OUTPUT_CSV=/app/results/{filename}"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
@@ -93,6 +94,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
             "image": f"{DOCKER_HUB}/campus-zenoh-edge:latest",
             "environment": [
                 "ZENOH_ROUTER=tcp/zenoh-router:7447",
+                "RUST_LOG=error",
                 f"TARGET_DEVICES={devices_str}",
                 f"PAYLOAD_BYTES={payload_bytes}",
                 f"INTERVAL_SEC={interval_sec}",
@@ -134,6 +136,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
             "image": f"{DOCKER_HUB}/campus-zenoh-quic-edge:latest",
             "environment": [
                 "ZENOH_ROUTER=quic/zenoh-router:7447",
+                "RUST_LOG=error",
                 f"TARGET_DEVICES={devices_str}",
                 f"PAYLOAD_BYTES={payload_bytes}",
                 f"INTERVAL_SEC={interval_sec}",
@@ -297,6 +300,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Print plans without running")
     parser.add_argument("--start-run", type=int, default=1, help="Run index to start from (1-based)")
     parser.add_argument("--pull", default="missing", choices=["always", "missing", "never"], help="Docker pull policy")
+    parser.add_argument("--debug", action="store_true", help="Dump logs from ALL containers each cell (default: edge only)")
     args = parser.parse_args()
 
     # Parse sweep dimensions
@@ -410,16 +414,20 @@ def main():
                             print("  [ERROR] Edge container not found! Sleeping instead...")
                             time.sleep(args.duration)
                         
-                        # Print logs for debugging
-                        print("  -> Printing logs for debugging...")
-                        for service_name in compose_dict["services"].keys():
+                        # Print logs: the edge container always (it carries the per-cell
+                        # summary table that reveals empty/failed cells); every other
+                        # container only with --debug. Dumping all device/router logs every
+                        # cell is what bloated the sweep log to hundreds of MB.
+                        services_to_log = (list(compose_dict["services"].keys())
+                                           if args.debug else [edge_service])
+                        for service_name in services_to_log:
                             container_id = get_container_id(temp_compose_path, service_name)
                             if container_id:
-                                print(f"\n========================================\n--- LOGS FOR {service_name} ---\n========================================")
+                                print(f"\n--- LOGS FOR {service_name} ---")
                                 logs_res = subprocess.run(["docker", "logs", container_id], capture_output=True, text=True)
                                 print(logs_res.stdout)
-                                print(logs_res.stderr)
-                                print("========================================\n")
+                                if logs_res.stderr:
+                                    print(logs_res.stderr)
                         
                         # Clean up docker compose setup
                         print("  -> Shutting down and cleaning up containers...")

@@ -5,6 +5,9 @@ import time
 import json
 import paho.mqtt.client as mqtt
 
+# VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small.
+VERBOSE = os.getenv("VERBOSE", "0") == "1"
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MQTT Device Simulator")
@@ -67,7 +70,8 @@ def on_message(client, userdata, msg):
         ts_edge_ns = data["ts_edge_ns"]
         ts_device_ns = time.monotonic_ns()
 
-        print(f"[{device_id}] Received command: {data['payload'][:30]}...")
+        if VERBOSE:
+            print(f"[{device_id}] Received command: {data['payload'][:30]}...")
 
         ack = {
             "device_id": device_id,

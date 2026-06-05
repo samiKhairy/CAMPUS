@@ -5,12 +5,21 @@ Right panel: 4 protocols only, no MQTT TCP (comparison — shows real difference
 """
 
 import os
+import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-BASE = os.path.join(os.path.dirname(__file__), '..', 'results', 'unified')
+# --output-base lets the same script target different result sets (e.g. the
+# host run in results/unified vs a server sweep in results/server-run). Path is
+# resolved relative to the repo root, matching analyze_results.py / run_matrix.py.
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--output-base', default='results/unified',
+                     help='Base directory where results are stored (relative to repo root)')
+_args, _ = _parser.parse_known_args()
+BASE = os.path.join(_root, _args.output_base)
 
 PROTOCOLS   = ['grpc', 'mqtt', 'mqtt-quic', 'zenoh', 'zenoh-quic']
 LABELS      = ['gRPC', 'MQTT (TCP)', 'MQTT-QUIC', 'Zenoh (TCP)', 'Zenoh-QUIC']

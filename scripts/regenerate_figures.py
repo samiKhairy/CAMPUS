@@ -1,18 +1,32 @@
 """
-Run this to regenerate all figures from the existing CSV data.
-Usage: python scripts/regenerate_figures.py
+Run this to regenerate all figures from existing CSV data.
+
+Usage:
+    python scripts/regenerate_figures.py                              # results/unified (host run)
+    python scripts/regenerate_figures.py --output-base results/server-run
+
+--output-base is passed through to every step so the whole figure set is
+generated from the dataset you choose.
 """
 
 import subprocess
 import sys
 import os
+import argparse
 
 scripts_dir = os.path.dirname(os.path.abspath(__file__))
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--output-base", default="results/unified",
+                    help="Base directory where results are stored (relative to repo root)")
+args = parser.parse_args()
+ob = ["--output-base", args.output_base]
+
 steps = [
-    ("Summary + base figures",  [sys.executable, os.path.join(scripts_dir, "analyze_results.py")]),
-    ("Extra figures",           [sys.executable, os.path.join(scripts_dir, "generate_extra_figures.py")]),
-    ("Two-panel figures",       [sys.executable, os.path.join(scripts_dir, "generate_twopanel_figures.py")]),
+    ("Summary + base figures",  [sys.executable, os.path.join(scripts_dir, "analyze_results.py")] + ob),
+    ("Extra figures",           [sys.executable, os.path.join(scripts_dir, "generate_extra_figures.py")] + ob),
+    ("Two-panel figures",       [sys.executable, os.path.join(scripts_dir, "generate_twopanel_figures.py")] + ob),
+    ("N=20 comparison",         [sys.executable, os.path.join(scripts_dir, "plot_n20_comparison.py")] + ob),
 ]
 
 for label, cmd in steps:
@@ -22,4 +36,4 @@ for label, cmd in steps:
         print(f"[ERROR] {label} failed.")
         sys.exit(1)
 
-print("\nAll figures regenerated in results/unified/")
+print(f"\nAll figures regenerated in {args.output_base}/")

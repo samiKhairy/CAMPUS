@@ -75,3 +75,29 @@ At N=10, 100B, clean network, MQTT shows a bimodal latency distribution: p50 dro
 - **Result directories:** `results/matrix/` (Phase 1, 3 TCP protocols, N≤10) and `results/unified/` (full 5-protocol sweep, N≤50)
 - **Figure generation:** `scripts/analyze_results.py` (summary + 3 original figures), `scripts/generate_extra_figures.py` (degraded latency vs N + MQTT rescue), `scripts/generate_twopanel_figures.py` (two-panel versions of latency_vs_N and profile_comparison)
 - **Matrix runner:** `scripts/run_matrix.py` — runs all configurations sequentially, applies netem, collects CSVs
+
+---
+
+## Server Migration — Braine node (June 2026)
+
+Moved the benchmark off the WSL2 laptop onto a lab server (`braine-head-node`, 10.30.7.40 — Xeon Gold 6238R, 112 threads, 251 GB RAM) to run clean high-N sweeps. Hit a chain of infrastructure issues; documented here as a deployment runbook.
+
+### 7. Stale Docker Hub images — netem silently failed
+**Problem:** First smoke test on the server "succeeded" (wrote a CSV) but every RTT was ~0.6 ms under `good_5g` instead of ~40 ms, with `[WARNING] Failed to apply netem`. Root cause: the `samiullahkhairy/campus-*` images on Docker Hub were **stale — built before `iproute2` was added to the Dockerfiles**, so `tc` was missing inside the containers (`docker exec … tc …` → `tc: not found`). The runner continued anyway and wrote clean-LAN latency mislabeled as good_5g.
+
+**Fix:** Rebuilt all 10 images from the current Dockerfiles (which do install `iproute2`) directly on the server, then re-pushed to Docker Hub. **Lesson:** always verify results against the expected netem floor (good_5g ≈ 40 ms, degraded ≈ 160 ms) — a CSV appearing is not proof netem worked.
+
+**Follow-up (open):** `apply_netem()` returns `False` on failure but the runner ignores it and continues. Should be changed to abort/flag the run so a missing `tc` can never silently poison a dataset again.
+
+### 8. Snap Docker could not stop containers
+**Problem:** The server's Docker was the **Snap build** (`Root=/var/snap/docker/...`), confined by AppArmor. It ran containers fine, but `docker stop`/`kill` on a *running* container returned `permission denied` — even as root. Exited containers could be removed, but long-running ones (device, router) could not be killed, so the runner couldn't tear down between cells. Fatal for a multi-cell sweep.
+
+**Fix:** With admin approval, removed the snap (`sudo snap remove --purge docker`) and installed **Docker CE from the official apt repo**. Teardown works correctly on CE.
+
+### 9. Docker CE default runtime broken (nvidia)
+**Problem:** After install, `docker run` failed with `fork/exec /usr/bin/nvidia-container-runtime: no such file or directory`. The node is a GPU box; `/etc/docker/daemon.json` had `default-runtime: nvidia`, but that binary didn't survive the snap→apt migration. This also breaks `docker build` (RUN steps use the default runtime).
+
+**Fix:** Set `default-runtime: runc` in `/etc/docker/daemon.json` (kept the `nvidia` runtime entry for later) and restarted Docker. K8s is unaffected (it uses containerd, not Docker). Admin to restore the nvidia default when they reinstall `nvidia-container-toolkit`.
+
+### ⚠️ Side effect for the admin — containerd upgraded on a K8s node
+Installing `docker-ce` pulled `containerd.io` **1.7.27 → 2.2.4** — the runtime Kubernetes uses on this node. The restart was *deferred*, so the running cluster was not disrupted, but **on the next containerd restart or node reboot, K8s will be on containerd 2.x**. Flagged to the admin to pin/verify compatibility before any reboot. (The cluster is a single-node, idle test cluster — only `kube-system` plus one `testns/testpod-stress` — so real-world blast radius is low, but etcd lives here.)

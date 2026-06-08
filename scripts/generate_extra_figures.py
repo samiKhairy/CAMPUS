@@ -22,11 +22,11 @@ _args, _ = _parser.parse_known_args()
 BASE = os.path.join(_root, _args.output_base)
 OUT  = BASE
 
-PROTOCOLS = ['grpc', 'mqtt', 'mqtt-quic', 'zenoh', 'zenoh-quic']
-LABELS    = ['gRPC', 'MQTT (TCP)', 'MQTT-QUIC', 'Zenoh (TCP)', 'Zenoh-QUIC']
-COLORS    = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+PROTOCOLS = ['grpc', 'mqtt', 'mqtt-quic', 'zenoh', 'zenoh-quic', 'dds']
+LABELS    = ['gRPC', 'MQTT (TCP)', 'MQTT-QUIC', 'Zenoh (TCP)', 'Zenoh-QUIC', 'DDS (RTPS)']
+COLORS    = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
 
-NS = [1, 2, 5, 10, 20]
+NS = [1, 2, 5, 10, 20, 50]
 
 
 def load_p50(protocol, profile, n, payload='100', rate='10'):

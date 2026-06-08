@@ -263,6 +263,40 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"]
             }
+    elif protocol == "dds":
+        # DDS/RTPS — NO broker, NO router. All participants discover each
+        # other directly via SPDP on the Docker bridge network.
+        # Cyclone DDS config is baked into the Docker image.
+
+        # 1. Edge Node
+        compose["services"]["edge-node"] = {
+            "image": f"{DOCKER_HUB}/campus-dds-edge:latest",
+            "environment": [
+                f"TARGET_DEVICES={devices_str}",
+                f"PAYLOAD_BYTES={payload_bytes}",
+                f"INTERVAL_SEC={interval_sec}",
+                f"RUN_DURATION={run_duration}",
+                f"OUTPUT_CSV=/app/results/{filename}",
+                "START_DELAY_SEC=5",
+                "PYTHONUNBUFFERED=1",
+            ],
+            "volumes": [f"{abs_output_dir}:/app/results"],
+            "cap_add": ["NET_ADMIN"],
+            "networks": ["campus-net"],
+        }
+
+        # 2. Devices (each is a standalone DDS participant)
+        for idx, dev in enumerate(devices_list):
+            compose["services"][dev] = {
+                "image": f"{DOCKER_HUB}/campus-dds-device:latest",
+                "command": ["python", "device_dds.py", dev],
+                "environment": [
+                    f"DEVICE_ID={dev}",
+                    "PYTHONUNBUFFERED=1",
+                ],
+                "cap_add": ["NET_ADMIN"],
+                "networks": ["campus-net"],
+            }
     compose["networks"] = {"campus-net": {"driver": "bridge"}}
     return compose
 
@@ -409,7 +443,7 @@ def execute_cell(protocol, profile, n, payload, interval, args,
 
 def main():
     parser = argparse.ArgumentParser(description="Unified Experiment Matrix Runner")
-    parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-quic", help="Comma-separated protocols")
+    parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-quic,dds", help="Comma-separated protocols")
     parser.add_argument("--profiles", default="clean,good_5g,degraded_5g", help="Comma-separated profiles")
     parser.add_argument("--devices", default="1,2,5,10,20,50", help="Comma-separated device counts N")
     parser.add_argument("--payloads", default="100,2000", help="Comma-separated payloads in bytes")

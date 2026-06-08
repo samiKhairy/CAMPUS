@@ -31,8 +31,8 @@ args = _parser.parse_args()
 N = args.devices
 PAYLOAD, RATE = 100, 10
 PROFILES = ['clean', 'good_5g', 'degraded_5g']
-# Plot order: Zenoh-QUIC, Zenoh, MQTT-QUIC, gRPC, MQTT (TCP)
-PROTO_DIRS = ['zenoh-quic', 'zenoh', 'mqtt-quic', 'grpc', 'mqtt']
+# Plot order: Zenoh-QUIC, Zenoh, MQTT-QUIC, gRPC, MQTT (TCP), DDS
+PROTO_DIRS = ['zenoh-quic', 'zenoh', 'mqtt-quic', 'grpc', 'mqtt', 'dds']
 
 _data = process_results(_root, args.output_base) or []
 _lookup = {(d['protocol'], d['profile'], d['devices'], d['payload'], d['rate']): d
@@ -50,8 +50,8 @@ def _col(field, profile):
             vals.append(round(float(entry[field]), 2))
     return vals
 
-protocols = ['Zenoh-QUIC', 'Zenoh\n(TCP)', 'MQTT-QUIC', 'gRPC', 'MQTT\n(TCP)']
-colors    = ['#8B5CF6',    '#EF4444',   '#22C55E',    '#3B82F6', '#F97316']
+protocols = ['Zenoh-QUIC', 'Zenoh\n(TCP)', 'MQTT-QUIC', 'gRPC', 'MQTT\n(TCP)', 'DDS\n(RTPS)']
+colors    = ['#8B5CF6',    '#EF4444',   '#22C55E',    '#3B82F6', '#F97316',     '#06B6D4']
 
 clean_p50,    good_p50,    degraded_p50    = (_col('p50', p) for p in PROFILES)
 clean_p95,    good_p95,    degraded_p95    = (_col('p95', p) for p in PROFILES)

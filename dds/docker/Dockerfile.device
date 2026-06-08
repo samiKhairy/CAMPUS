@@ -1,0 +1,25 @@
+# DDS Device Simulator — Cyclone DDS over RTPS/UDP
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies, build Cyclone DDS C core from source
+RUN apt-get update && apt-get install -y git cmake g++ iproute2 && rm -rf /var/lib/apt/lists/*
+
+# Pin a release tag for reproducibility
+RUN git clone --depth 1 --branch 0.10.5 https://github.com/eclipse-cyclonedds/cyclonedds /tmp/cdds \
+ && cmake -S /tmp/cdds -B /tmp/cdds/build -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_IDLC=ON \
+ && cmake --build /tmp/cdds/build --target install -j \
+ && rm -rf /tmp/cdds
+
+ENV CYCLONEDDS_HOME=/usr/local
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+RUN pip install --no-cache-dir cyclonedds
+
+COPY cyclonedds.xml /etc/cyclonedds/cyclonedds.xml
+ENV CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml
+
+COPY src/device_dds.py .
+
+CMD ["python", "device_dds.py"]

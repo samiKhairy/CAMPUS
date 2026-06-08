@@ -21,13 +21,13 @@ _parser.add_argument('--output-base', default='results/unified',
 _args, _ = _parser.parse_known_args()
 BASE = os.path.join(_root, _args.output_base)
 
-PROTOCOLS   = ['grpc', 'mqtt', 'mqtt-quic', 'zenoh', 'zenoh-quic']
-LABELS      = ['gRPC', 'MQTT (TCP)', 'MQTT-QUIC', 'Zenoh (TCP)', 'Zenoh-QUIC']
-COLORS      = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-MARKERS     = ['o', 's', '^', 'D', 'v']
+PROTOCOLS   = ['grpc', 'mqtt', 'mqtt-quic', 'zenoh', 'zenoh-quic', 'dds']
+LABELS      = ['gRPC', 'MQTT (TCP)', 'MQTT-QUIC', 'Zenoh (TCP)', 'Zenoh-QUIC', 'DDS (RTPS)']
+COLORS      = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+MARKERS     = ['o', 's', '^', 'D', 'v', 'p']
 
 # Protocols shown on the right (zoom) panel — MQTT TCP excluded
-ZOOM_PROTOS = ['grpc', 'mqtt-quic', 'zenoh', 'zenoh-quic']
+ZOOM_PROTOS = ['grpc', 'mqtt-quic', 'zenoh', 'zenoh-quic', 'dds']
 
 plt.style.use('seaborn-v0_8-whitegrid'
                if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
@@ -90,7 +90,7 @@ ax_left.annotate('MQTT (TCP)\ncollapses at N=50\n(p95 ≈ 14,600 ms)',
                  fontsize=8, color='#ff7f0e',
                  arrowprops=dict(arrowstyle='->', color='#ff7f0e', lw=0.9))
 
-ax_right.set_title('Zoom: gRPC, Zenoh, Zenoh-QUIC, MQTT-QUIC', fontsize=11, fontweight='bold')
+ax_right.set_title('Zoom: gRPC, Zenoh, Zenoh-QUIC, MQTT-QUIC, DDS', fontsize=11, fontweight='bold')
 ax_right.set_xlabel('Number of Devices (N)', fontsize=10)
 ax_right.set_ylabel('p95 RTT Latency (ms)', fontsize=10)
 ax_right.set_xticks(NS_ZOOM)
@@ -143,7 +143,7 @@ for i, (proto, label, color) in enumerate(zip(ZOOM_PROTOS, zoom_labels, zoom_col
     offset = (i - n_zoom / 2 + 0.5) * w
     ax_right.bar(x + offset, vals, w, label=label, color=color, alpha=0.85)
 
-ax_right.set_title('Zoom: gRPC, Zenoh, Zenoh-QUIC, MQTT-QUIC', fontsize=11, fontweight='bold')
+ax_right.set_title('Zoom: gRPC, Zenoh, Zenoh-QUIC, MQTT-QUIC, DDS', fontsize=11, fontweight='bold')
 ax_right.set_xlabel('Network Profile', fontsize=10)
 ax_right.set_ylabel('p95 Latency (ms)', fontsize=10)
 ax_right.set_xticks(x)

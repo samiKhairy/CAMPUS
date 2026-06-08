@@ -291,6 +291,122 @@ def apply_netem(container, impairment):
         return False
     return True
 
+def count_data_rows(csv_path):
+    """Data rows (excluding header) in a results CSV; 0 if missing/header-only."""
+    if not os.path.exists(csv_path):
+        return 0
+    with open(csv_path) as f:
+        return max(0, sum(1 for _ in f) - 1)
+
+
+def execute_cell(protocol, profile, n, payload, interval, args,
+                 output_dir, filename, root_dir, temp_compose_path):
+    """Run one matrix cell once: compose up, netem, wait, logs, teardown.
+    Writes the cell CSV as a side effect."""
+    # Generate compose dictionary
+    compose_dict = generate_compose(
+        protocol=protocol,
+        n=n,
+        payload_bytes=payload,
+        interval_sec=interval,
+        run_duration=args.duration,
+        output_dir=output_dir,
+        filename=filename,
+        root_dir=root_dir
+    )
+
+    # Write compose file
+    with open(temp_compose_path, "w") as f:
+        yaml.safe_dump(compose_dict, f)
+
+    # Preemptively clean up any lingering resources from a crashed previous run
+    subprocess.run(
+        ["docker", "compose", "-f", temp_compose_path, "down"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    # Spin up services
+    print("  -> Spinning up docker services...")
+    res_up = subprocess.run(
+        ["docker", "compose", "-f", temp_compose_path, "up", "-d", "--build", "--pull", args.pull],
+        capture_output=True, text=True
+    )
+    if res_up.returncode != 0:
+        print(f"  [ERROR] Failed to start services:\n{res_up.stderr}")
+        sys.exit(1)
+
+    # Give containers a couple of seconds to boot up and initialize networks
+    time.sleep(3)
+
+    # Identify containers to inject impairment
+    impairment = PROFILES[profile]
+    edge_service = "grpc-server" if protocol == "grpc" else "edge-node"
+    edge_container = get_container_id(temp_compose_path, edge_service)
+
+    # Apply netem to edge node
+    if edge_container:
+        apply_netem(edge_container, impairment)
+
+    # Apply netem to all device containers
+    for i in range(1, n + 1):
+        dev_service = f"device-{i}"
+        dev_container = get_container_id(temp_compose_path, dev_service)
+        if dev_container:
+            apply_netem(dev_container, impairment)
+
+    # Wait for edge node to finish its run duration
+    print(f"  -> Experiment in progress (waiting {args.duration}s for edge-node)...")
+    if edge_container:
+        # Bound the wait: a hung edge (e.g. mqtt-quic C client
+        # deadlocking when its device drops) must not freeze the
+        # whole sweep. If it overruns, abandon the cell and move on.
+        try:
+            subprocess.run(
+                ["docker", "wait", edge_container],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=args.duration + 60,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"  [WARN] edge-node did not exit within "
+                  f"{args.duration + 60}s (likely hung) — abandoning "
+                  f"this cell and continuing")
+    else:
+        print("  [ERROR] Edge container not found! Sleeping instead...")
+        time.sleep(args.duration)
+
+    # Print logs: the edge container always (it carries the per-cell
+    # summary table that reveals empty/failed cells); every other
+    # container only with --debug. Dumping all device/router logs every
+    # cell is what bloated the sweep log to hundreds of MB.
+    services_to_log = (list(compose_dict["services"].keys())
+                       if args.debug else [edge_service])
+    for service_name in services_to_log:
+        container_id = get_container_id(temp_compose_path, service_name)
+        if container_id:
+            print(f"\n--- LOGS FOR {service_name} ---")
+            try:
+                logs_res = subprocess.run(
+                    ["docker", "logs", container_id],
+                    capture_output=True, text=True, timeout=30,
+                )
+                print(logs_res.stdout)
+                if logs_res.stderr:
+                    print(logs_res.stderr)
+            except subprocess.TimeoutExpired:
+                print(f"  [WARN] docker logs for {service_name} timed out")
+
+    # Clean up docker compose setup
+    print("  -> Shutting down and cleaning up containers...")
+    subprocess.run(
+        ["docker", "compose", "-f", temp_compose_path, "down"],
+        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    # Remove temporary compose file
+    if os.path.exists(temp_compose_path):
+        os.remove(temp_compose_path)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Unified Experiment Matrix Runner")
     parser.add_argument("--protocols", default="grpc,zenoh,mqtt,zenoh-quic,mqtt-quic", help="Comma-separated protocols")
@@ -302,6 +418,7 @@ def main():
     parser.add_argument("--output-base", default="results/unified", help="Base output directory")
     parser.add_argument("--dry-run", action="store_true", help="Print plans without running")
     parser.add_argument("--start-run", type=int, default=1, help="Run index to start from (1-based)")
+    parser.add_argument("--retries", type=int, default=3, help="Max attempts per cell if it yields 0 data rows (1 = no retry)")
     parser.add_argument("--pull", default="missing", choices=["always", "missing", "never"], help="Docker pull policy")
     parser.add_argument("--debug", action="store_true", help="Dump logs from ALL containers each cell (default: edge only)")
     args = parser.parse_args()
@@ -355,110 +472,19 @@ def main():
                         # Ensure output directory exists
                         os.makedirs(output_dir, exist_ok=True)
                         
-                        # Generate compose dictionary
-                        compose_dict = generate_compose(
-                            protocol=protocol,
-                            n=n,
-                            payload_bytes=payload,
-                            interval_sec=interval,
-                            run_duration=args.duration,
-                            output_dir=output_dir,
-                            filename=filename,
-                            root_dir=root_dir
-                        )
-                        
-                        # Write compose file
-                        with open(temp_compose_path, "w") as f:
-                            yaml.safe_dump(compose_dict, f)
-                            
-                        # Preemptively clean up any lingering resources from a crashed previous run
-                        subprocess.run(
-                            ["docker", "compose", "-f", temp_compose_path, "down"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                        )
-
-                        # Spin up services
-                        print("  -> Spinning up docker services...")
-                        res_up = subprocess.run(
-                            ["docker", "compose", "-f", temp_compose_path, "up", "-d", "--build", "--pull", args.pull],
-                            capture_output=True, text=True
-                        )
-                        if res_up.returncode != 0:
-                            print(f"  [ERROR] Failed to start services:\n{res_up.stderr}")
-                            sys.exit(1)
-                        
-                        # Give containers a couple of seconds to boot up and initialize networks
-                        time.sleep(3)
-                        
-                        # Identify containers to inject impairment
-                        impairment = PROFILES[profile]
-                        edge_service = "grpc-server" if protocol == "grpc" else "edge-node"
-                        edge_container = get_container_id(temp_compose_path, edge_service)
-                        
-                        # Apply netem to edge node
-                        if edge_container:
-                            apply_netem(edge_container, impairment)
-                        
-                        # Apply netem to all device containers
-                        for i in range(1, n + 1):
-                            dev_service = f"device-{i}"
-                            dev_container = get_container_id(temp_compose_path, dev_service)
-                            if dev_container:
-                                apply_netem(dev_container, impairment)
-                        
-                        # Wait for edge node to finish its run duration
-                        print(f"  -> Experiment in progress (waiting {args.duration}s for edge-node)...")
-                        if edge_container:
-                            # Bound the wait: a hung edge (e.g. mqtt-quic C client
-                            # deadlocking when its device drops) must not freeze the
-                            # whole sweep. If it overruns, abandon the cell and move on.
-                            try:
-                                subprocess.run(
-                                    ["docker", "wait", edge_container],
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    timeout=args.duration + 60,
-                                )
-                            except subprocess.TimeoutExpired:
-                                print(f"  [WARN] edge-node did not exit within "
-                                      f"{args.duration + 60}s (likely hung) — abandoning "
-                                      f"this cell and continuing")
-                        else:
-                            print("  [ERROR] Edge container not found! Sleeping instead...")
-                            time.sleep(args.duration)
-                        
-                        # Print logs: the edge container always (it carries the per-cell
-                        # summary table that reveals empty/failed cells); every other
-                        # container only with --debug. Dumping all device/router logs every
-                        # cell is what bloated the sweep log to hundreds of MB.
-                        services_to_log = (list(compose_dict["services"].keys())
-                                           if args.debug else [edge_service])
-                        for service_name in services_to_log:
-                            container_id = get_container_id(temp_compose_path, service_name)
-                            if container_id:
-                                print(f"\n--- LOGS FOR {service_name} ---")
-                                try:
-                                    logs_res = subprocess.run(
-                                        ["docker", "logs", container_id],
-                                        capture_output=True, text=True, timeout=30,
-                                    )
-                                    print(logs_res.stdout)
-                                    if logs_res.stderr:
-                                        print(logs_res.stderr)
-                                except subprocess.TimeoutExpired:
-                                    print(f"  [WARN] docker logs for {service_name} timed out")
-                        
-                        # Clean up docker compose setup
-                        print("  -> Shutting down and cleaning up containers...")
-                        subprocess.run(
-                            ["docker", "compose", "-f", temp_compose_path, "down"],
-                            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                        )
-                        
-                        # Remove temporary compose file
-                        if os.path.exists(temp_compose_path):
-                            os.remove(temp_compose_path)
-                            
-                        print(f"  -> Run complete. Results saved in: {os.path.join(output_dir, filename)}\n")
+                        # Run the cell, retrying if it yields no data. mqtt-quic over
+                        # QUIC randomly fails connection setup (~1/3 of attempts) and
+                        # produces a 0-sample cell; a failed setup is not a measurement,
+                        # so re-run it. --retries 1 disables this.
+                        csv_path = os.path.join(output_dir, filename)
+                        for attempt in range(1, args.retries + 1):
+                            execute_cell(protocol, profile, n, payload, interval, args,
+                                         output_dir, filename, root_dir, temp_compose_path)
+                            if count_data_rows(csv_path) > 0 or attempt >= args.retries:
+                                break
+                            print(f"  [RETRY] {filename}: 0 data rows on attempt "
+                                  f"{attempt}/{args.retries} — re-running cell")
+                        print(f"  -> Run complete. Results saved in: {csv_path}\n")
 
 if __name__ == "__main__":
     main()

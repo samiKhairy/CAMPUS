@@ -266,7 +266,32 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
     elif protocol == "dds":
         # DDS/RTPS — NO broker, NO router. All participants discover each
         # other directly via SPDP on the Docker bridge network.
-        # Cyclone DDS config is baked into the Docker image.
+        # Generate dynamic cyclonedds.xml listing only the actually running peers
+        # to avoid DNS lookup failures and DomainParticipant initialization crashes.
+        temp_xml_path = os.path.join(abs_root_dir, "scripts", "temp-cyclonedds.xml")
+        peers_str = "\n".join([f'                <Peer Address="device-{i}" />' for i in range(1, n + 1)])
+        xml_content = f"""<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+    <Domain Id="any">
+        <General>
+            <AllowMulticast>false</AllowMulticast>
+            <MaxMessageSize>65500B</MaxMessageSize>
+        </General>
+        <Discovery>
+            <ParticipantIndex>auto</ParticipantIndex>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+            <Peers>
+                <Peer Address="edge-node" />
+{peers_str}
+            </Peers>
+        </Discovery>
+    </Domain>
+</CycloneDDS>
+"""
+        with open(temp_xml_path, "w") as f:
+            f.write(xml_content)
 
         # 1. Edge Node
         compose["services"]["edge-node"] = {
@@ -279,8 +304,12 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"OUTPUT_CSV=/app/results/{filename}",
                 "START_DELAY_SEC=5",
                 "PYTHONUNBUFFERED=1",
+                "CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml"
             ],
-            "volumes": [f"{abs_output_dir}:/app/results"],
+            "volumes": [
+                f"{abs_output_dir}:/app/results",
+                f"{temp_xml_path}:/etc/cyclonedds/cyclonedds.xml"
+            ],
             "cap_add": ["NET_ADMIN"],
             "networks": ["campus-net"],
         }
@@ -293,6 +322,10 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "environment": [
                     f"DEVICE_ID={dev}",
                     "PYTHONUNBUFFERED=1",
+                    "CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml"
+                ],
+                "volumes": [
+                    f"{temp_xml_path}:/etc/cyclonedds/cyclonedds.xml"
                 ],
                 "cap_add": ["NET_ADMIN"],
                 "networks": ["campus-net"],
@@ -436,9 +469,12 @@ def execute_cell(protocol, profile, n, payload, interval, args,
         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
-    # Remove temporary compose file
+    # Remove temporary compose and xml files
     if os.path.exists(temp_compose_path):
         os.remove(temp_compose_path)
+    temp_xml_path = os.path.join(root_dir, "scripts", "temp-cyclonedds.xml")
+    if os.path.exists(temp_xml_path):
+        os.remove(temp_xml_path)
 
 
 def main():

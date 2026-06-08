@@ -120,6 +120,7 @@ services:
           - pcf
 
   # 2g. Binding Support Function (BSF) - session binding registry
+  
   open5gs-bsf:
     image: gradiant/open5gs:2.7.2
     container_name: open5gs-bsf

@@ -4,22 +4,66 @@
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
     <Domain Id="any">
         <General>
-            <!-- Docker bridge networks don't reliably support multicast.
-                 Force unicast discovery so all DDS participants on the
-                 same Docker bridge can find each other via SPDP. -->
-            <AllowMulticast>spdp</AllowMulticast>
-            <MaxMessageSize>65500</MaxMessageSize>
+            <!-- Disable multicast discovery to avoid packet loss issues on Docker bridge -->
+            <AllowMulticast>false</AllowMulticast>
+            <MaxMessageSize>65500B</MaxMessageSize>
         </General>
         <Discovery>
             <ParticipantIndex>auto</ParticipantIndex>
-            <!-- Localhost peer covers all participants on the same
-                 Docker bridge network (they share a subnet). The
-                 DDS SPDP protocol will enumerate participant indices
-                 0-119 on each listed peer address. -->
             <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+            <Peers>
+                <Peer Address="edge-node" />
+                <Peer Address="device-1" />
+                <Peer Address="device-2" />
+                <Peer Address="device-3" />
+                <Peer Address="device-4" />
+                <Peer Address="device-5" />
+                <Peer Address="device-6" />
+                <Peer Address="device-7" />
+                <Peer Address="device-8" />
+                <Peer Address="device-9" />
+                <Peer Address="device-10" />
+                <Peer Address="device-11" />
+                <Peer Address="device-12" />
+                <Peer Address="device-13" />
+                <Peer Address="device-14" />
+                <Peer Address="device-15" />
+                <Peer Address="device-16" />
+                <Peer Address="device-17" />
+                <Peer Address="device-18" />
+                <Peer Address="device-19" />
+                <Peer Address="device-20" />
+                <Peer Address="device-21" />
+                <Peer Address="device-22" />
+                <Peer Address="device-23" />
+                <Peer Address="device-24" />
+                <Peer Address="device-25" />
+                <Peer Address="device-26" />
+                <Peer Address="device-27" />
+                <Peer Address="device-28" />
+                <Peer Address="device-29" />
+                <Peer Address="device-30" />
+                <Peer Address="device-31" />
+                <Peer Address="device-32" />
+                <Peer Address="device-33" />
+                <Peer Address="device-34" />
+                <Peer Address="device-35" />
+                <Peer Address="device-36" />
+                <Peer Address="device-37" />
+                <Peer Address="device-38" />
+                <Peer Address="device-39" />
+                <Peer Address="device-40" />
+                <Peer Address="device-41" />
+                <Peer Address="device-42" />
+                <Peer Address="device-43" />
+                <Peer Address="device-44" />
+                <Peer Address="device-45" />
+                <Peer Address="device-46" />
+                <Peer Address="device-47" />
+                <Peer Address="device-48" />
+                <Peer Address="device-49" />
+                <Peer Address="device-50" />
+            </Peers>
         </Discovery>
-        <!-- <Internal>
-            <SocketReceiveBufferSize min="1MB" />
-        </Internal> -->
     </Domain>
 </CycloneDDS>

@@ -232,7 +232,10 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"INTERVAL_SEC={interval_sec}",
                 f"RUN_DURATION={run_duration}",
                 f"OUTPUT_CSV=/app/results/{filename}",
-                "START_DELAY_SEC=2"
+                # EMQX reports "healthy" (node up) before its QUIC listener on :14567
+                # finishes binding. A 2s delay was enough on the host but races on Braine,
+                # producing half-open connections whose first QoS-1 send blocks. Wait longer.
+                "START_DELAY_SEC=10"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
             "depends_on": {

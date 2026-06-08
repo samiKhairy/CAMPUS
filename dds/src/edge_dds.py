@@ -187,10 +187,11 @@ def ack_reader_loop():
                         latencies = [r[2] for r in stats[dev]["records"]]
                         avg_ms = sum(latencies) / len(latencies)
 
-                    print(
-                        f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms "
-                        f"(Avg: {avg_ms:.2f} ms, Total acks: {count})"
-                    )
+                    if VERBOSE:
+                        print(
+                            f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms "
+                            f"(Avg: {avg_ms:.2f} ms, Total acks: {count})"
+                        )
             except Exception:
                 pass
         time.sleep(0.005)  # 5ms poll interval — balance latency vs CPU

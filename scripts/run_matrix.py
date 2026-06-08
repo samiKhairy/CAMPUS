@@ -406,10 +406,19 @@ def main():
                         # Wait for edge node to finish its run duration
                         print(f"  -> Experiment in progress (waiting {args.duration}s for edge-node)...")
                         if edge_container:
-                            subprocess.run(
-                                ["docker", "wait", edge_container],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                            )
+                            # Bound the wait: a hung edge (e.g. mqtt-quic C client
+                            # deadlocking when its device drops) must not freeze the
+                            # whole sweep. If it overruns, abandon the cell and move on.
+                            try:
+                                subprocess.run(
+                                    ["docker", "wait", edge_container],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    timeout=args.duration + 60,
+                                )
+                            except subprocess.TimeoutExpired:
+                                print(f"  [WARN] edge-node did not exit within "
+                                      f"{args.duration + 60}s (likely hung) — abandoning "
+                                      f"this cell and continuing")
                         else:
                             print("  [ERROR] Edge container not found! Sleeping instead...")
                             time.sleep(args.duration)
@@ -424,10 +433,16 @@ def main():
                             container_id = get_container_id(temp_compose_path, service_name)
                             if container_id:
                                 print(f"\n--- LOGS FOR {service_name} ---")
-                                logs_res = subprocess.run(["docker", "logs", container_id], capture_output=True, text=True)
-                                print(logs_res.stdout)
-                                if logs_res.stderr:
-                                    print(logs_res.stderr)
+                                try:
+                                    logs_res = subprocess.run(
+                                        ["docker", "logs", container_id],
+                                        capture_output=True, text=True, timeout=30,
+                                    )
+                                    print(logs_res.stdout)
+                                    if logs_res.stderr:
+                                        print(logs_res.stderr)
+                                except subprocess.TimeoutExpired:
+                                    print(f"  [WARN] docker logs for {service_name} timed out")
                         
                         # Clean up docker compose setup
                         print("  -> Shutting down and cleaning up containers...")

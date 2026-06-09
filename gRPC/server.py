@@ -205,7 +205,7 @@ signal.signal(signal.SIGTERM, sigterm_handler)
 
 def serve():
     service = DeviceService(TARGET_DEVICES)
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max(100, len(TARGET_DEVICES) + 10)))
     device_pb2_grpc.add_DeviceServiceServicer_to_server(service, server)
     server.add_insecure_port(f'[::]:{GRPC_PORT}')
     

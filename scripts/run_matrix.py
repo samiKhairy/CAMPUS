@@ -288,7 +288,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         </General>
         <Discovery>
             <ParticipantIndex>auto</ParticipantIndex>
-            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+            <MaxAutoParticipantIndex>1000</MaxAutoParticipantIndex>
             <Peers>
                 <Peer Address="edge-node" />
 {peers_str}

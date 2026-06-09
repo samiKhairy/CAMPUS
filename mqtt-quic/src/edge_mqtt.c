@@ -10,7 +10,7 @@
 #include <nng/mqtt/mqtt_quic.h>
 #include "cJSON.h"
 
-#define MAX_DEVICES  64
+#define MAX_DEVICES  256
 #define MAX_RECORDS  50000
 
 typedef struct {

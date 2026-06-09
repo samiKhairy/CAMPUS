@@ -38,7 +38,7 @@ def get_container_id(compose_path, service_name):
     except subprocess.CalledProcessError:
         return ""
 
-def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, output_dir, filename, root_dir):
+def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, output_dir, filename, root_dir, e2e=False):
     compose = {"version": "3.8", "services": {}}
     devices_list = [f"device-{i}" for i in range(1, n + 1)]
     devices_str = ",".join(devices_list)
@@ -48,11 +48,12 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
     abs_root_dir = os.path.abspath(root_dir)
 
     DOCKER_HUB = "samiullahkhairy"
+    tag = "e2e" if e2e else "latest"
 
     if protocol == "grpc":
         # 1. Edge Server
         compose["services"]["grpc-server"] = {
-            "image": f"{DOCKER_HUB}/campus-grpc-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-grpc-edge:{tag}",
             "ports": ["50051:50051"],
             "environment": [
                 f"TARGET_DEVICES={devices_str}",
@@ -61,7 +62,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"RUN_DURATION={run_duration}",
                 "PYTHONUNBUFFERED=1",
                 "GRPC_VERBOSITY=ERROR",
-                f"OUTPUT_CSV=/app/results/{filename}"
+                f"OUTPUT_CSV=/app/results/{filename}",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
             "cap_add": ["NET_ADMIN"],
@@ -91,7 +93,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "image": f"{DOCKER_HUB}/campus-zenoh-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-zenoh-edge:{tag}",
             "environment": [
                 "ZENOH_ROUTER=tcp/zenoh-router:7447",
                 "RUST_LOG=error",
@@ -99,7 +101,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"PAYLOAD_BYTES={payload_bytes}",
                 f"INTERVAL_SEC={interval_sec}",
                 f"RUN_DURATION={run_duration}",
-                f"OUTPUT_CSV=/app/results/{filename}"
+                f"OUTPUT_CSV=/app/results/{filename}",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
             "depends_on": ["zenoh-router"],
@@ -133,7 +136,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "image": f"{DOCKER_HUB}/campus-zenoh-quic-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-zenoh-quic-edge:{tag}",
             "environment": [
                 "ZENOH_ROUTER=quic/zenoh-router:7447",
                 "RUST_LOG=error",
@@ -141,7 +144,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"PAYLOAD_BYTES={payload_bytes}",
                 f"INTERVAL_SEC={interval_sec}",
                 f"RUN_DURATION={run_duration}",
-                f"OUTPUT_CSV=/app/results/{filename}"
+                f"OUTPUT_CSV=/app/results/{filename}",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [
                 f"{abs_output_dir}:/app/results",
@@ -173,7 +177,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node
         compose["services"]["edge-node"] = {
-            "image": f"{DOCKER_HUB}/campus-mqtt-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-mqtt-edge:{tag}",
             "environment": [
                 "MQTT_BROKER=mqtt-broker:1883",
                 f"TARGET_DEVICES={devices_str}",
@@ -181,7 +185,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"INTERVAL_SEC={interval_sec}",
                 f"RUN_DURATION={run_duration}",
                 f"OUTPUT_CSV=/app/results/{filename}",
-                "MQTT_QOS=1"
+                "MQTT_QOS=1",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
             "depends_on": ["mqtt-broker"],
@@ -224,7 +229,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         
         # 2. Edge Node (C client using NanoSDK with QUIC transport)
         compose["services"]["edge-node"] = {
-            "image": f"{DOCKER_HUB}/campus-mqtt-quic-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-mqtt-quic-edge:{tag}",
             "environment": [
                 "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567",
                 f"TARGET_DEVICES={devices_str}",
@@ -235,7 +240,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 # EMQX reports "healthy" (node up) before its QUIC listener on :14567
                 # finishes binding. A 2s delay was enough on the host but races on Braine,
                 # producing half-open connections whose first QoS-1 send blocks. Wait longer.
-                "START_DELAY_SEC=10"
+                "START_DELAY_SEC=10",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [f"{abs_output_dir}:/app/results"],
             "depends_on": {
@@ -296,7 +302,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
 
         # 1. Edge Node
         compose["services"]["edge-node"] = {
-            "image": f"{DOCKER_HUB}/campus-dds-edge:latest",
+            "image": f"{DOCKER_HUB}/campus-dds-edge:{tag}",
             "environment": [
                 f"TARGET_DEVICES={devices_str}",
                 f"PAYLOAD_BYTES={payload_bytes}",
@@ -305,7 +311,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 f"OUTPUT_CSV=/app/results/{filename}",
                 "START_DELAY_SEC=5",
                 "PYTHONUNBUFFERED=1",
-                "CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml"
+                "CYCLONEDDS_URI=file:///etc/cyclonedds/cyclonedds.xml",
+                f"E2E_MODE={'1' if e2e else '0'}"
             ],
             "volumes": [
                 f"{abs_output_dir}:/app/results",
@@ -380,7 +387,8 @@ def execute_cell(protocol, profile, n, payload, interval, args,
         run_duration=args.duration,
         output_dir=output_dir,
         filename=filename,
-        root_dir=root_dir
+        root_dir=root_dir,
+        e2e=args.e2e
     )
 
     # Write compose file
@@ -492,7 +500,12 @@ def main():
     parser.add_argument("--retries", type=int, default=3, help="Max attempts per cell if it yields 0 data rows (1 = no retry)")
     parser.add_argument("--pull", default="missing", choices=["always", "missing", "never"], help="Docker pull policy")
     parser.add_argument("--debug", action="store_true", help="Dump logs from ALL containers each cell (default: edge only)")
+    parser.add_argument("--e2e", action="store_true", help="Enable sequential E2E loop mode for downlink benchmarking")
     args = parser.parse_args()
+
+    # Automatically divert E2E results to a separate directory to avoid overwriting baseline results
+    if args.e2e and args.output_base == "results/unified":
+        args.output_base = "results/unified_e2e"
 
     # Parse sweep dimensions
     protocols = [p.strip() for p in args.protocols.split(",") if p.strip()]
@@ -510,6 +523,7 @@ def main():
     print(f"Payloads     : {payloads} bytes")
     print(f"Rates        : {rates} Hz")
     print(f"Run Duration : {args.duration} s")
+    print(f"E2E Mode     : {args.e2e}")
     print("==================================================\n")
 
     if not args.dry_run and not check_docker():

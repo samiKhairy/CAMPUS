@@ -15,7 +15,7 @@ def parse_filename(filename):
         }
     return None
 
-def process_results(root_dir, output_base):
+def process_results(root_dir, output_base, e2e=False):
     data_list = []
     matrix_dir = os.path.join(root_dir, output_base)
     
@@ -76,7 +76,10 @@ def process_results(root_dir, output_base):
                     if duration_s < 28.0:
                         duration_s = 30.0
                     
-                    expected_packets = params["devices"] * params["rate"] * duration_s
+                    if e2e:
+                        expected_packets = max(0, params["devices"] - 1) * params["rate"] * duration_s
+                    else:
+                        expected_packets = params["devices"] * params["rate"] * duration_s
                     lost_packets = max(0, expected_packets - n_rec)
                     loss_pct = (lost_packets / expected_packets) * 100 if expected_packets > 0 else 0.0
                     
@@ -217,11 +220,16 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Analyze Benchmark Results")
     parser.add_argument("--output-base", default="results/unified", help="Base directory where results are stored")
+    parser.add_argument("--e2e", action="store_true", help="Analyze results from E2E mode sweeps")
     args = parser.parse_args()
 
+    # Automatically divert to separate directory when in E2E mode to avoid overwriting baseline results
+    if args.e2e and args.output_base == "results/unified":
+        args.output_base = "results/unified_e2e"
+
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print(f"[ANALYZE] Processing CSV files from {args.output_base}...")
-    data_list = process_results(root_dir, args.output_base)
+    print(f"[ANALYZE] Processing CSV files from {args.output_base}... E2E Mode: {args.e2e}")
+    data_list = process_results(root_dir, args.output_base, e2e=args.e2e)
     
     if not data_list:
         print("[ERROR] No data processed. Exiting.")

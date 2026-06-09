@@ -44,13 +44,21 @@ def run_client():
     channel = grpc.insecure_channel(server_address)
     stub = device_pb2_grpc.DeviceServiceStub(channel)
 
-    try:
-        # Step 1: Register the device identity (Unary RPC)
-        register_request = device_pb2.DeviceInfo(device_id=device_id)
-        register_response = stub.Register(register_request)
-        print(f"[{device_id}] Register response: success={register_response.success}")
-    except grpc.RpcError as e:
-        print(f"[{device_id}] Failed to register with server: {e.details() if hasattr(e, 'details') else e}")
+    # Step 1: Register the device identity (Unary RPC) with retry logic
+    register_request = device_pb2.DeviceInfo(device_id=device_id)
+    registered = False
+    for attempt in range(1, 11):
+        try:
+            register_response = stub.Register(register_request)
+            print(f"[{device_id}] Register response: success={register_response.success}")
+            registered = True
+            break
+        except grpc.RpcError as e:
+            print(f"[{device_id}] Register attempt {attempt}/10 failed: {e.details() if hasattr(e, 'details') else e}")
+            time.sleep(2)
+            
+    if not registered:
+        print(f"[{device_id}] Failed to register with server after 10 attempts. Exiting.")
         sys.exit(1)
 
     # Step 2: Establish the bidirectional streaming RPC

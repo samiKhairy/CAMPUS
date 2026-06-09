@@ -73,7 +73,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 2. Devices
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-grpc-device:latest",
+                "image": f"{DOCKER_HUB}/campus-grpc-device:{tag}",
                 "command": ["python", "client.py", dev, "--server", "grpc-server:50051"],
                 "environment": [
                     "GRPC_SERVER=grpc-server:50051",
@@ -113,7 +113,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 3. Devices
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-zenoh-device:latest",
+                "image": f"{DOCKER_HUB}/campus-zenoh-device:{tag}",
                 "command": ["python", "device_zenoh.py", dev, "--router", "tcp/zenoh-router:7447"],
                 "depends_on": ["zenoh-router"],
                 "cap_add": ["NET_ADMIN"],
@@ -159,7 +159,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 3. Devices
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-zenoh-quic-device:latest",
+                "image": f"{DOCKER_HUB}/campus-zenoh-quic-device:{tag}",
                 "command": ["python", "device_zenoh.py", dev, "--router", "quic/zenoh-router:7447"],
                 "volumes": [f"{os.path.join(abs_root_dir, 'certs')}:/etc/zenoh"],
                 "depends_on": ["zenoh-router"],
@@ -197,7 +197,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 3. Devices
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-mqtt-device:latest",
+                "image": f"{DOCKER_HUB}/campus-mqtt-device:{tag}",
                 "command": ["python", "device_mqtt.py", dev, "--broker", "mqtt-broker:1883"],
                 "depends_on": ["mqtt-broker"],
                 "cap_add": ["NET_ADMIN"],
@@ -256,7 +256,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 3. Devices (C client using NanoSDK with QUIC transport)
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-mqtt-quic-device:latest",
+                "image": f"{DOCKER_HUB}/campus-mqtt-quic-device:{tag}",
                 "environment": [
                     f"DEVICE_ID={dev}",
                     "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567",
@@ -325,7 +325,7 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
         # 2. Devices (each is a standalone DDS participant)
         for idx, dev in enumerate(devices_list):
             compose["services"][dev] = {
-                "image": f"{DOCKER_HUB}/campus-dds-device:latest",
+                "image": f"{DOCKER_HUB}/campus-dds-device:{tag}",
                 "command": ["python", "device_dds.py", dev],
                 "environment": [
                     f"DEVICE_ID={dev}",

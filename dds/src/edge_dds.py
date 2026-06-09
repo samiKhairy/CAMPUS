@@ -94,6 +94,12 @@ def parse_args():
         default=os.getenv("OUTPUT_CSV", ""),
         help="Output CSV file path",
     )
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        default=os.getenv("E2E_MODE", "0") == "1",
+        help="Enable sequential E2E loop mode for downlink benchmarking (default: False)"
+    )
     return parser.parse_args()
 
 
@@ -175,23 +181,55 @@ def ack_reader_loop():
                 samples = ack_readers[dev].take()
                 for sample in samples:
                     recv_ts_ns = time.monotonic_ns()
-                    rtt_ns = recv_ts_ns - sample.ts_edge_ns
-                    rtt_ms = rtt_ns / 1e6
+                    send_ts_ns = sample.ts_edge_ns
+                    
+                    if args.e2e:
+                        if dev == TARGET_DEVICES[0]:
+                            # device-1 is the uplink trigger source. Forward the update to targets.
+                            payload_str = "x" * PAYLOAD_BYTES
+                            for target in TARGET_DEVICES[1:]:
+                                forward_sample = CampusCommand(
+                                    device_id=target,
+                                    payload=payload_str,
+                                    ts_edge_ns=send_ts_ns, # carry the original T0
+                                )
+                                cmd_writers[target].write(forward_sample)
+                            continue
+                        else:
+                            # Target device: compute E2E latency = RTT / 2
+                            e2e_ns = (recv_ts_ns - send_ts_ns) / 2
+                            e2e_ms = e2e_ns / 1e6
+                            with stats_lock:
+                                stats[dev]["records"].append(
+                                    (send_ts_ns, recv_ts_ns, e2e_ms)
+                                )
+                                stats[dev]["count"] += 1
+                                count = stats[dev]["count"]
+                                latencies = [r[2] for r in stats[dev]["records"]]
+                                avg_ms = sum(latencies) / len(latencies)
+                            if VERBOSE:
+                                print(
+                                    f"[EDGE] E2E Ack from {dev} -> E2E={e2e_ms:.2f} ms "
+                                    f"(Avg: {avg_ms:.2f} ms, Total acks: {count})"
+                                )
+                    else:
+                        rtt_ns = recv_ts_ns - send_ts_ns
+                        rtt_ms = rtt_ns / 1e6
 
-                    with stats_lock:
-                        stats[dev]["records"].append(
-                            (sample.ts_edge_ns, recv_ts_ns, rtt_ms)
-                        )
-                        stats[dev]["count"] += 1
-                        count = stats[dev]["count"]
-                        latencies = [r[2] for r in stats[dev]["records"]]
-                        avg_ms = sum(latencies) / len(latencies)
+                        with stats_lock:
+                            stats[dev]["records"].append(
+                                (send_ts_ns, recv_ts_ns, rtt_ms)
+                            )
+                            stats[dev]["count"] += 1
+                            count = stats[dev]["count"]
+                            latencies = [r[2] for r in stats[dev]["records"]]
+                            avg_ms = sum(latencies) / len(latencies)
 
-                    if VERBOSE:
-                        print(
-                            f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms "
-                            f"(Avg: {avg_ms:.2f} ms, Total acks: {count})"
-                        )
+                        if VERBOSE:
+                            print(
+                                f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms "
+                                f"(Avg: {avg_ms:.2f} ms, Total acks: {count})"
+                            )
             except Exception:
                 pass
         time.sleep(0.005)  # 5ms poll interval — balance latency vs CPU
@@ -238,10 +276,10 @@ try:
 
         payload_str = "x" * PAYLOAD_BYTES
 
-        for dev in TARGET_DEVICES:
+        if args.e2e:
+            dev = TARGET_DEVICES[0]
             if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
-                continue
-
+                break
             ts_edge_ns = time.monotonic_ns()
             sample = CampusCommand(
                 device_id=dev,
@@ -250,9 +288,24 @@ try:
             )
             cmd_writers[dev].write(sample)
             sent_counts[dev] += 1
-
             if VERBOSE:
-                print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+                print(f"[EDGE] Sent E2E trigger to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+        else:
+            for dev in TARGET_DEVICES:
+                if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
+                    continue
+
+                ts_edge_ns = time.monotonic_ns()
+                sample = CampusCommand(
+                    device_id=dev,
+                    payload=payload_str,
+                    ts_edge_ns=ts_edge_ns,
+                )
+                cmd_writers[dev].write(sample)
+                sent_counts[dev] += 1
+
+                if VERBOSE:
+                    print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
 
         time.sleep(INTERVAL_SEC)
 

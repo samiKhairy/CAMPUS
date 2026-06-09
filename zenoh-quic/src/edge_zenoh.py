@@ -62,6 +62,12 @@ def parse_args():
         default=os.getenv("OUTPUT_CSV", ""),
         help="Output CSV file path to write results (default: OUTPUT_CSV env var or auto-generated timestamp file)"
     )
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        default=os.getenv("E2E_MODE", "0") == "1",
+        help="Enable sequential E2E loop mode for downlink benchmarking (default: False)"
+    )
     return parser.parse_args()
 
     # all of the above functions or let's say argument parsing code is used to parse the arguments passed to the script 
@@ -134,17 +140,42 @@ def on_ack(sample):
         if dev not in stats:
             return
             
-        rtt_ns = recv_ts_ns - send_ts_ns
-        rtt_ms = rtt_ns / 1e6
-        
-        stats[dev]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
-        stats[dev]["count"] += 1
+        if args.e2e:
+            if dev == TARGET_DEVICES[0]:
+                # device-1 is the uplink trigger source. Forward the update to targets.
+                payload_str = "x" * PAYLOAD_BYTES
+                forward_payload = {
+                    "device_id": "",
+                    "payload": payload_str,
+                    "ts_edge_ns": send_ts_ns, # carry the original T0
+                }
+                for target in TARGET_DEVICES[1:]:
+                    forward_payload["device_id"] = target
+                    pubs[target].put(json.dumps(forward_payload))
+                return
+            else:
+                # Target device: compute E2E latency = RTT / 2
+                e2e_ns = (recv_ts_ns - send_ts_ns) / 2
+                e2e_ms = e2e_ns / 1e6
+                
+                stats[dev]["records"].append((send_ts_ns, recv_ts_ns, e2e_ms))
+                stats[dev]["count"] += 1
+                
+                latencies = [r[2] for r in stats[dev]["records"]]
+                avg_ms = sum(latencies) / len(latencies)
+                print(f"[EDGE] E2E Ack from {dev} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+        else:
+            rtt_ns = recv_ts_ns - send_ts_ns
+            rtt_ms = rtt_ns / 1e6
+            
+            stats[dev]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
+            stats[dev]["count"] += 1
 
-        # Calculate running average
-        latencies = [r[2] for r in stats[dev]["records"]]
-        avg_ms = sum(latencies) / len(latencies)
+            # Calculate running average
+            latencies = [r[2] for r in stats[dev]["records"]]
+            avg_ms = sum(latencies) / len(latencies)
 
-        print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+            print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
     except Exception as e:
         print(f"[EDGE] Error handling ack: {e}")
 
@@ -185,22 +216,37 @@ try:
 
         payload_str = "x" * PAYLOAD_BYTES
 
-        for dev in TARGET_DEVICES:
-            # If max messages limit is set, check if we've already met it for this device
+        if args.e2e:
+            dev = TARGET_DEVICES[0]
             if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
-                continue
-                
+                break
             ts_edge_ns = time.monotonic_ns()
             payload = {
                 "device_id": dev,
                 "payload": payload_str,
                 "ts_edge_ns": ts_edge_ns,
             }
-            
             pubs[dev].put(json.dumps(payload))
             sent_counts[dev] += 1
             if VERBOSE:
-                print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+                print(f"[EDGE] Sent E2E trigger to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+        else:
+            for dev in TARGET_DEVICES:
+                # If max messages limit is set, check if we've already met it for this device
+                if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
+                    continue
+                    
+                ts_edge_ns = time.monotonic_ns()
+                payload = {
+                    "device_id": dev,
+                    "payload": payload_str,
+                    "ts_edge_ns": ts_edge_ns,
+                }
+                
+                pubs[dev].put(json.dumps(payload))
+                sent_counts[dev] += 1
+                if VERBOSE:
+                    print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
             
         time.sleep(INTERVAL_SEC)
 

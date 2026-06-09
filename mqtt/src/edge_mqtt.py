@@ -58,6 +58,12 @@ def parse_args():
         default=int(os.getenv("MQTT_QOS", "1")),
         help="MQTT Quality of Service level: 0, 1, or 2 (default: MQTT_QOS env var or 1)"
     )
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        default=os.getenv("E2E_MODE", "0") == "1",
+        help="Enable sequential E2E loop mode for downlink benchmarking (default: False)"
+    )
     return parser.parse_args()
 
 
@@ -124,17 +130,43 @@ def on_message(client, userdata, msg):
         if dev not in stats:
             return
             
-        rtt_ns = recv_ts_ns - send_ts_ns
-        rtt_ms = rtt_ns / 1e6
-        
-        stats[dev]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
-        stats[dev]["count"] += 1
+        if args.e2e:
+            if dev == TARGET_DEVICES[0]:
+                # device-1 is the uplink trigger source. Forward the update to targets.
+                payload_str = "x" * PAYLOAD_BYTES
+                forward_payload = {
+                    "device_id": "",
+                    "payload": payload_str,
+                    "ts_edge_ns": send_ts_ns, # carry the original T0
+                }
+                for target in TARGET_DEVICES[1:]:
+                    forward_payload["device_id"] = target
+                    cmd_topic = f"campus/cmd/{target}"
+                    client.publish(cmd_topic, json.dumps(forward_payload), qos=MQTT_QOS)
+                return
+            else:
+                # Target device: compute E2E latency = RTT / 2
+                e2e_ns = (recv_ts_ns - send_ts_ns) / 2
+                e2e_ms = e2e_ns / 1e6
+                
+                stats[dev]["records"].append((send_ts_ns, recv_ts_ns, e2e_ms))
+                stats[dev]["count"] += 1
+                
+                latencies = [r[2] for r in stats[dev]["records"]]
+                avg_ms = sum(latencies) / len(latencies)
+                print(f"[EDGE] E2E Ack from {dev} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+        else:
+            rtt_ns = recv_ts_ns - send_ts_ns
+            rtt_ms = rtt_ns / 1e6
+            
+            stats[dev]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
+            stats[dev]["count"] += 1
 
-        # Calculate running average
-        latencies = [r[2] for r in stats[dev]["records"]]
-        avg_ms = sum(latencies) / len(latencies)
+            # Calculate running average
+            latencies = [r[2] for r in stats[dev]["records"]]
+            avg_ms = sum(latencies) / len(latencies)
 
-        print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+            print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
     except Exception as e:
         print(f"[EDGE] Error handling ack: {e}")
 
@@ -199,23 +231,39 @@ try:
 
         payload_str = "x" * PAYLOAD_BYTES
 
-        for dev in TARGET_DEVICES:
-            # If max messages limit is set, check if we've already met it for this device
+        if args.e2e:
+            dev = TARGET_DEVICES[0]
             if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
-                continue
-                
+                break
             ts_edge_ns = time.monotonic_ns()
             payload = {
                 "device_id": dev,
                 "payload": payload_str,
                 "ts_edge_ns": ts_edge_ns,
             }
-            
             cmd_topic = f"campus/cmd/{dev}"
             client.publish(cmd_topic, json.dumps(payload), qos=MQTT_QOS)
             sent_counts[dev] += 1
             if VERBOSE:
-                print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+                print(f"[EDGE] Sent E2E trigger to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+        else:
+            for dev in TARGET_DEVICES:
+                # If max messages limit is set, check if we've already met it for this device
+                if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
+                    continue
+                    
+                ts_edge_ns = time.monotonic_ns()
+                payload = {
+                    "device_id": dev,
+                    "payload": payload_str,
+                    "ts_edge_ns": ts_edge_ns,
+                }
+                
+                cmd_topic = f"campus/cmd/{dev}"
+                client.publish(cmd_topic, json.dumps(payload), qos=MQTT_QOS)
+                sent_counts[dev] += 1
+                if VERBOSE:
+                    print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
             
         time.sleep(INTERVAL_SEC)
 

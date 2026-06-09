@@ -55,6 +55,12 @@ def parse_args():
         default=os.getenv("OUTPUT_CSV", ""),
         help="Output CSV file path to write results (default: OUTPUT_CSV env var or auto-generated timestamp file)"
     )
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        default=os.getenv("E2E_MODE", "0") == "1",
+        help="Enable sequential E2E loop mode for downlink benchmarking (default: False)"
+    )
     return parser.parse_args()
 
 args = parse_args()
@@ -120,18 +126,36 @@ class DeviceService(device_pb2_grpc.DeviceServiceServicer):
                         # Ignore metrics for non-target devices (idle devices)
                         continue
                         
-                    rtt_ns = recv_ts_ns - send_ts_ns
-                    rtt_ms = rtt_ns / 1e6
-                    
-                    with self.lock:
-                        self.stats[device_id]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
-                        self.stats[device_id]["count"] += 1
+                    if args.e2e:
+                        if device_id == self.target_devices[0]:
+                            # device-1 is the uplink trigger source. Forward the update to targets.
+                            payload_str = "x" * PAYLOAD_BYTES
+                            for target in self.target_devices[1:]:
+                                self.send_command(target, payload_str, send_ts_ns)
+                            continue
+                        else:
+                            # Target device: compute E2E latency = RTT / 2
+                            e2e_ns = (recv_ts_ns - send_ts_ns) / 2
+                            e2e_ms = e2e_ns / 1e6
+                            with self.lock:
+                                self.stats[device_id]["records"].append((send_ts_ns, recv_ts_ns, e2e_ms))
+                                self.stats[device_id]["count"] += 1
+                                latencies = [r[2] for r in self.stats[device_id]["records"]]
+                                avg_ms = sum(latencies) / len(latencies)
+                            print(f"[EDGE] E2E Ack from {device_id} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
+                    else:
+                        rtt_ns = recv_ts_ns - send_ts_ns
+                        rtt_ms = rtt_ns / 1e6
                         
-                        # Calculate running average
-                        latencies = [r[2] for r in self.stats[device_id]["records"]]
-                        avg_ms = sum(latencies) / len(latencies)
-                        
-                    print(f"[EDGE] Ack from {device_id} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
+                        with self.lock:
+                            self.stats[device_id]["records"].append((send_ts_ns, recv_ts_ns, rtt_ms))
+                            self.stats[device_id]["count"] += 1
+                            
+                            # Calculate running average
+                            latencies = [r[2] for r in self.stats[device_id]["records"]]
+                            avg_ms = sum(latencies) / len(latencies)
+                            
+                        print(f"[EDGE] Ack from {device_id} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
             except grpc.RpcError:
                 # Handle connection aborts quietly
                 pass
@@ -219,19 +243,29 @@ def serve():
 
             payload_str = "x" * PAYLOAD_BYTES
 
-            for dev in TARGET_DEVICES:
-                if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
-                    continue
-                    
-                ts_edge_ns = time.monotonic_ns()
-                success = service.send_command(dev, payload_str, ts_edge_ns)
-                if success:
-                    sent_counts[dev] += 1
-                    if VERBOSE:
-                        print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
-                else:
-                    # Device is not yet connected/registered
-                    pass
+            if args.e2e:
+                dev = TARGET_DEVICES[0]
+                if not (MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES):
+                    ts_edge_ns = time.monotonic_ns()
+                    success = service.send_command(dev, payload_str, ts_edge_ns)
+                    if success:
+                        sent_counts[dev] += 1
+                        if VERBOSE:
+                            print(f"[EDGE] Sent E2E trigger to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+            else:
+                for dev in TARGET_DEVICES:
+                    if MAX_MESSAGES > 0 and sent_counts[dev] >= MAX_MESSAGES:
+                        continue
+                        
+                    ts_edge_ns = time.monotonic_ns()
+                    success = service.send_command(dev, payload_str, ts_edge_ns)
+                    if success:
+                        sent_counts[dev] += 1
+                        if VERBOSE:
+                            print(f"[EDGE] Sent to {dev} (Msg #{sent_counts[dev]}): {PAYLOAD_BYTES} bytes")
+                    else:
+                        # Device is not yet connected/registered
+                        pass
                     
             time.sleep(INTERVAL_SEC)
             

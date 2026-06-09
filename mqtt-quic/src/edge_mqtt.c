@@ -34,6 +34,8 @@ static int           g_n_devices = 0;
 static nng_aio      *g_recv_aio;
 /* VERBOSE=1 enables per-message stdout logging; off by default to keep sweep logs small. */
 static int           g_verbose = 0;
+static int           g_e2e = 0;
+static char         *g_payload_data = NULL;
 
 static void sig_handler(int sig) { (void)sig; running = 0; }
 
@@ -73,14 +75,50 @@ static void process_msg(nng_msg *msg, uint64_t recv_ns) {
 
                 DeviceStats *ds = find_stats(dev_id);
                 if (ds && ds->count < ds->capacity) {
-                    pthread_mutex_lock(&ds->mu);
-                    ds->records[ds->count].send_ts_ns = send_ts_ns;
-                    ds->records[ds->count].recv_ts_ns = recv_ns;
-                    ds->records[ds->count].latency_ms = rtt_ms;
-                    ds->count++;
-                    pthread_mutex_unlock(&ds->mu);
-                    if (g_verbose)
-                        printf("[EDGE] Ack from %s -> RTT=%.2f ms\n", dev_id, rtt_ms);
+                    if (g_e2e) {
+                        if (strcmp(dev_id, g_stats[0].device_id) == 0) {
+                            // device-1 is the uplink trigger source. Forward the update to targets.
+                            cJSON *cmd = cJSON_CreateObject();
+                            cJSON_AddStringToObject(cmd, "device_id", "");
+                            cJSON_AddStringToObject(cmd, "payload",   g_payload_data);
+                            cJSON_AddNumberToObject(cmd, "ts_edge_ns", (double)send_ts_ns); // carry the original T0
+                            char *cmd_str = cJSON_PrintUnformatted(cmd);
+                            cJSON_Delete(cmd);
+
+                            for (int i = 1; i < g_n_devices; i++) {
+                                char topic[128];
+                                snprintf(topic, sizeof(topic), "campus/cmd/%s", g_stats[i].device_id);
+
+                                nng_msg *pub_msg;
+                                nng_mqtt_msg_alloc(&pub_msg, 0);
+                                nng_mqtt_msg_set_packet_type(pub_msg,     NNG_MQTT_PUBLISH);
+                                nng_mqtt_msg_set_publish_topic(pub_msg,   topic);
+                                nng_mqtt_msg_set_publish_payload(pub_msg, (uint8_t *)cmd_str, strlen(cmd_str));
+                                nng_mqtt_msg_set_publish_qos(pub_msg,     1);
+                                nng_sendmsg(g_sock, pub_msg, NNG_FLAG_NONBLOCK);
+                            }
+                            free(cmd_str);
+                        } else {
+                            // Target device: compute E2E latency = RTT / 2
+                            pthread_mutex_lock(&ds->mu);
+                            ds->records[ds->count].send_ts_ns = send_ts_ns;
+                            ds->records[ds->count].recv_ts_ns = recv_ns;
+                            ds->records[ds->count].latency_ms = rtt_ms / 2.0;
+                            ds->count++;
+                            pthread_mutex_unlock(&ds->mu);
+                            if (g_verbose)
+                                printf("[EDGE] E2E Ack from %s -> E2E=%.2f ms\n", dev_id, rtt_ms / 2.0);
+                        }
+                    } else {
+                        pthread_mutex_lock(&ds->mu);
+                        ds->records[ds->count].send_ts_ns = send_ts_ns;
+                        ds->records[ds->count].recv_ts_ns = recv_ns;
+                        ds->records[ds->count].latency_ms = rtt_ms;
+                        ds->count++;
+                        pthread_mutex_unlock(&ds->mu);
+                        if (g_verbose)
+                            printf("[EDGE] Ack from %s -> RTT=%.2f ms\n", dev_id, rtt_ms);
+                    }
                 }
             }
             cJSON_Delete(root);
@@ -147,6 +185,7 @@ int main(void) {
     double      start_delay   = atof(getenv("START_DELAY_SEC") ? getenv("START_DELAY_SEC") : "5.0");
     const char *output_csv    = getenv("OUTPUT_CSV");
     g_verbose = (getenv("VERBOSE") && atoi(getenv("VERBOSE")) == 1);
+    g_e2e = (getenv("E2E_MODE") && atoi(getenv("E2E_MODE")) == 1);
 
     if (start_delay > 0) {
         printf("[EDGE] Sleeping %.0fs for network setup...\n", start_delay);
@@ -254,9 +293,9 @@ int main(void) {
     printf("[EDGE] broker=%s devices=%d payload=%dB interval=%.3fs duration=%.0fs\n",
            broker_url, g_n_devices, payload_bytes, interval_sec, run_duration);
 
-    char *payload_data = malloc(payload_bytes + 1);
-    memset(payload_data, 'x', payload_bytes);
-    payload_data[payload_bytes] = '\0';
+    g_payload_data = malloc(payload_bytes + 1);
+    memset(g_payload_data, 'x', payload_bytes);
+    g_payload_data[payload_bytes] = '\0';
 
     struct timespec start_ts;
     clock_gettime(CLOCK_MONOTONIC, &start_ts);
@@ -268,18 +307,17 @@ int main(void) {
                          (now_ts.tv_nsec - start_ts.tv_nsec) / 1e9;
         if (elapsed >= run_duration) break;
 
-        for (int i = 0; i < g_n_devices; i++) {
+        if (g_e2e) {
             uint64_t ts_ns = mono_ns();
-
             cJSON *cmd = cJSON_CreateObject();
-            cJSON_AddStringToObject(cmd, "device_id", device_ids[i]);
-            cJSON_AddStringToObject(cmd, "payload",   payload_data);
+            cJSON_AddStringToObject(cmd, "device_id", device_ids[0]);
+            cJSON_AddStringToObject(cmd, "payload",   g_payload_data);
             cJSON_AddNumberToObject(cmd, "ts_edge_ns", (double)ts_ns);
             char *cmd_str = cJSON_PrintUnformatted(cmd);
             cJSON_Delete(cmd);
 
             char topic[128];
-            snprintf(topic, sizeof(topic), "campus/cmd/%s", device_ids[i]);
+            snprintf(topic, sizeof(topic), "campus/cmd/%s", device_ids[0]);
 
             nng_msg *pub_msg;
             nng_mqtt_msg_alloc(&pub_msg, 0);
@@ -289,6 +327,29 @@ int main(void) {
             nng_mqtt_msg_set_publish_qos(pub_msg,     1);
             nng_sendmsg(g_sock, pub_msg, NNG_FLAG_NONBLOCK);
             free(cmd_str);
+        } else {
+            for (int i = 0; i < g_n_devices; i++) {
+                uint64_t ts_ns = mono_ns();
+
+                cJSON *cmd = cJSON_CreateObject();
+                cJSON_AddStringToObject(cmd, "device_id", device_ids[i]);
+                cJSON_AddStringToObject(cmd, "payload",   g_payload_data);
+                cJSON_AddNumberToObject(cmd, "ts_edge_ns", (double)ts_ns);
+                char *cmd_str = cJSON_PrintUnformatted(cmd);
+                cJSON_Delete(cmd);
+
+                char topic[128];
+                snprintf(topic, sizeof(topic), "campus/cmd/%s", device_ids[i]);
+
+                nng_msg *pub_msg;
+                nng_mqtt_msg_alloc(&pub_msg, 0);
+                nng_mqtt_msg_set_packet_type(pub_msg,     NNG_MQTT_PUBLISH);
+                nng_mqtt_msg_set_publish_topic(pub_msg,   topic);
+                nng_mqtt_msg_set_publish_payload(pub_msg, (uint8_t *)cmd_str, strlen(cmd_str));
+                nng_mqtt_msg_set_publish_qos(pub_msg,     1);
+                nng_sendmsg(g_sock, pub_msg, NNG_FLAG_NONBLOCK);
+                free(cmd_str);
+            }
         }
 
         usleep((useconds_t)(interval_sec * 1e6));
@@ -302,7 +363,7 @@ int main(void) {
     printf("[EDGE] [DEBUG] Freeing AIO...\n");
     nng_aio_free(g_recv_aio);
     printf("[EDGE] [DEBUG] Freeing payload data...\n");
-    free(payload_data);
+    free(g_payload_data);
     printf("[EDGE] [DEBUG] Opening CSV file: %s\n", output_csv);
     FILE *f = fopen(output_csv, "w");
     if (f) {

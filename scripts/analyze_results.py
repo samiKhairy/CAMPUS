@@ -224,8 +224,8 @@ def main():
     args = parser.parse_args()
 
     # Automatically divert to separate directory when in E2E mode to avoid overwriting baseline results
-    if args.e2e and args.output_base == "results/unified":
-        args.output_base = "results/unified_e2e"
+    if args.e2e and not args.output_base.endswith("_e2e"):
+        args.output_base = args.output_base.rstrip("/\\") + "_e2e"
 
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     print(f"[ANALYZE] Processing CSV files from {args.output_base}... E2E Mode: {args.e2e}")

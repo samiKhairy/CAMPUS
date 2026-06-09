@@ -504,8 +504,8 @@ def main():
     args = parser.parse_args()
 
     # Automatically divert E2E results to a separate directory to avoid overwriting baseline results
-    if args.e2e and args.output_base == "results/unified":
-        args.output_base = "results/unified_e2e"
+    if args.e2e and not args.output_base.endswith("_e2e"):
+        args.output_base = args.output_base.rstrip("/\\") + "_e2e"
 
     # Parse sweep dimensions
     protocols = [p.strip() for p in args.protocols.split(",") if p.strip()]

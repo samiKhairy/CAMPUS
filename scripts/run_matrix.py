@@ -253,7 +253,8 @@ def generate_compose(protocol, n, payload_bytes, interval_sec, run_duration, out
                 "image": f"{DOCKER_HUB}/campus-mqtt-quic-device:latest",
                 "environment": [
                     f"DEVICE_ID={dev}",
-                    "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567"
+                    "MQTT_BROKER_URL=mqtt-quic://mqtt-broker:14567",
+                    "START_DELAY_SEC=10"
                 ],
                 "depends_on": {
                     "mqtt-broker": {

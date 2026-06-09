@@ -148,6 +148,11 @@ int main(void) {
     const char *output_csv    = getenv("OUTPUT_CSV");
     g_verbose = (getenv("VERBOSE") && atoi(getenv("VERBOSE")) == 1);
 
+    if (start_delay > 0) {
+        printf("[EDGE] Sleeping %.0fs for network setup...\n", start_delay);
+        usleep((useconds_t)(start_delay * 1e6));
+    }
+
     if (!broker_url)  broker_url  = "mqtt-tcp://localhost:1883";
     if (!devices_env) devices_env = "device-1";
     if (!output_csv)  output_csv  = "/app/results/out.csv";
@@ -244,10 +249,7 @@ int main(void) {
         nng_recv_aio(g_sock, g_recv_aio);
     }
 
-    if (start_delay > 0) {
-        printf("[EDGE] Sleeping %.0fs for network setup...\n", start_delay);
-        usleep((useconds_t)(start_delay * 1e6));
-    }
+
 
     printf("[EDGE] broker=%s devices=%d payload=%dB interval=%.3fs duration=%.0fs\n",
            broker_url, g_n_devices, payload_bytes, interval_sec, run_duration);

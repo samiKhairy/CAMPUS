@@ -88,6 +88,9 @@ for idx, ax in enumerate(axes):
     
     # Annotate bars with p50 value and loss %
     for i, (bar, val, l) in enumerate(zip(bars, p50, loss)):
+        if val <= 0.0:
+            continue
+            
         # Format the value
         if val >= 1000:
             label = f'{val/1000:.1f} s'
@@ -99,16 +102,16 @@ for idx, ax in enumerate(axes):
         
         # For the degraded MQTT bar, use log scale so we need special handling
         if idx == 2 and val > 1000:
-            ax.text(bar.get_x() + bar.get_width()/2, top * 1.25,
+            ax.text(bar.get_x() + bar.get_width()/2, top * 1.35,
                     f'{label}\n({l}% loss)', ha='center', va='bottom',
                     fontsize=9, fontweight='bold', color='#DC2626')
         elif idx == 2:
             # Degraded panel, log scale
-            ax.text(bar.get_x() + bar.get_width()/2, top * 1.12,
+            ax.text(bar.get_x() + bar.get_width()/2, top * 1.22,
                     f'{label}', ha='center', va='bottom',
                     fontsize=9, fontweight='bold')
             if l > 5:
-                ax.text(bar.get_x() + bar.get_width()/2, val * 0.75,
+                ax.text(bar.get_x() + bar.get_width()/2, val * 0.70,
                         f'{l}% loss', ha='center', va='top',
                         fontsize=7.5, color='#DC2626', fontweight='bold')
         else:

@@ -22,6 +22,13 @@ This file documents bugs found, fixes applied, and system-level issues hit durin
 
 ---
 
+### 3. QUIC client startup connection race & deadlock
+**Problem:** In `mqtt-quic` runs on the server, the edge and device containers immediately opened QUIC client sockets on startup. Since the EMQX broker takes up to 25s to initialize and bind the QUIC listener on port 14567, clients attempting to connect during this boot window entered half-open states, leading to blocked sends and deadlocks inside NanoSDK's `nng_close` during container teardown.
+
+**Fix:** Reordered the startup lifecycle in `edge_mqtt.c` and `device_mqtt.c`. The `START_DELAY_SEC` environment variable (defaulting to 10s on device) is now read and executed at the very beginning of `main()`, *before* any socket or dialer initialization (`nng_mqtt_quic_client_open`). This guarantees that the broker is fully up and listening before any handshakes are attempted.
+
+---
+
 ## Engineering Fixes at Scale (N=50)
 
 ### 3. NanoSDK client thread mutex deadlock

@@ -113,6 +113,12 @@ int main(void) {
 
     g_device_id = device_id;
 
+    double start_delay = atof(getenv("START_DELAY_SEC") ? getenv("START_DELAY_SEC") : "10.0");
+    if (start_delay > 0) {
+        printf("[%s] Sleeping %.0fs for network setup...\n", device_id, start_delay);
+        usleep((useconds_t)(start_delay * 1e6));
+    }
+
     char cmd_topic[128];
     snprintf(cmd_topic,   sizeof(cmd_topic),   "campus/cmd/%s", device_id);
     snprintf(g_ack_topic, sizeof(g_ack_topic), "campus/ack/%s", device_id);

@@ -27,6 +27,7 @@ steps = [
     ("Extra figures",           [sys.executable, os.path.join(scripts_dir, "generate_extra_figures.py")] + ob),
     ("Two-panel figures",       [sys.executable, os.path.join(scripts_dir, "generate_twopanel_figures.py")] + ob),
     ("N=20 comparison",         [sys.executable, os.path.join(scripts_dir, "plot_n20_comparison.py")] + ob),
+    ("Loss figures",            [sys.executable, os.path.join(scripts_dir, "generate_loss_figures.py")] + ob),
 ]
 
 for label, cmd in steps:

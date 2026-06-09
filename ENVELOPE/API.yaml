@@ -1,0 +1,536 @@
+openapi: 3.0.3
+info:
+  title: ENVELOPE APIs
+  description: Evaluation and validation of connected mobility in real open systems beyond 5GS. Includes Device Location (Geofencing), Performance Metrics, and Quality on Demand (QoD) APIs.
+  version: 1.0.0
+servers:
+  - url: https://{apiRoot}
+    description: Base URL for all ENVELOPE APIs
+    variables:
+      apiRoot:
+        default: api.envelope.example.com
+        description: API Root domain
+
+paths:
+  # ==========================================
+  # DEVICE LOCATION (GEOFENCING) API
+  # ==========================================
+  /geofencing-subscriptions/subscriptions:
+    post:
+      tags:
+        - Device Location (Geofencing)
+      summary: Creates a new subscription
+      description: Create a subscription for a device to receive notifications when a device enters or exits a specified geographical area.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '202':
+          description: Request accepted to be processed (async)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionAsync'
+        '400':
+          description: Problem with the client request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorInfo'
+    get:
+      tags:
+        - Device Location (Geofencing)
+      summary: Retrieve a list of geofencing subscription(s)
+      responses:
+        '200':
+          description: Array of Subscription(s)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+
+  /geofencing-subscriptions/subscriptions/{subscriptionId}:
+    parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Subscription identifier
+    get:
+      tags:
+        - Device Location (Geofencing)
+      summary: Retrieve a subscription
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+    delete:
+      tags:
+        - Device Location (Geofencing)
+      summary: Delete a subscription
+      responses:
+        '200':
+          description: Successful Response (Async)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionAsync'
+        '204':
+          description: Subscription deleted
+
+  # ==========================================
+  # PERFORMANCE METRICS API
+  # ==========================================
+  /performance-metrics/subscriptions:
+    post:
+      tags:
+        - Performance Metrics
+      summary: Creates a new subscription
+      description: Create a subscription to receive periodic UE's network performance (UL/DL) metrics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscription'
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionInfo'
+
+  /performance-metrics/subscriptions/{subscription_id}:
+    parameters:
+      - name: subscription_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Subscription identifier
+    delete:
+      tags:
+        - Performance Metrics
+      summary: Delete a subscription
+      responses:
+        '204':
+          description: Subscription deleted
+
+  # ==========================================
+  # QUALITY ON DEMAND (QoD) API
+  # ==========================================
+  /quality-on-demand/v1/sessions:
+    post:
+      tags:
+        - Quality on Demand
+      summary: Create a new QoS session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSession'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+
+  /quality-on-demand/v1/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Session ID
+    get:
+      tags:
+        - Quality on Demand
+      summary: Get QoS session information
+      responses:
+        '200':
+          description: Session retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+    delete:
+      tags:
+        - Quality on Demand
+      summary: Delete a QoS session
+      responses:
+        '204':
+          description: Session deleted
+
+  /quality-on-demand/v1/sessions/{sessionId}/extend:
+    post:
+      tags:
+        - Quality on Demand
+      summary: Extend the duration of an active session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendSessionDuration'
+      responses:
+        '201': 
+          description: Session extended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+
+  /quality-on-demand/v1/retrieve-sessions:
+    post:
+      tags:
+        - Quality on Demand
+      summary: Get all QoS profiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrieveSessionsInput'
+      responses:
+        '200':
+          description: QoS session information for a given device
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionInfo'
+
+components:
+  schemas:
+    # ----------------------------------------
+    # Shared Schemas
+    # ----------------------------------------
+    ErrorInfo:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+        code:
+          type: string
+          description: Code given to this error
+        message:
+          type: string
+          description: Detailed error description
+
+    # ----------------------------------------
+    # Geofencing Schemas
+    # ----------------------------------------
+    SubscriptionRequest:
+      type: object
+      required:
+        - protocol
+        - sink
+        - types
+        - config
+      properties:
+        protocol:
+          type: string
+          example: "HTTP"
+        sink:
+          type: string
+          description: The HTTP address to which events shall be delivered
+        sinkCredential:
+          type: object
+          properties:
+            credentialType:
+              type: string
+              example: "ACCESSTOKEN"
+        types:
+          type: array
+          items:
+            type: string
+          description: Allowed values include area-entered or area-left
+        config:
+          type: object
+          required:
+            - subscriptionDetail
+          properties:
+            subscriptionDetail:
+              type: object
+              required:
+                - area
+                - device
+              properties:
+                area:
+                  type: object
+                  required:
+                    - areaType
+                    - radius
+                    - center
+                  properties:
+                    areaType:
+                      type: string
+                      example: "CIRCLE"
+                    radius:
+                      type: integer
+                      minimum: 1
+                      maximum: 200000
+                    center:
+                      type: object
+                      required:
+                        - latitude
+                        - longitude
+                      properties:
+                        latitude:
+                          type: number
+                          format: double
+                        longitude:
+                          type: number
+                          format: double
+                device:
+                  type: object
+                  properties:
+                    ipv4Address:
+                      type: object
+                      properties:
+                        publicAddress:
+                          type: string
+                        privateAddress:
+                          type: string
+                        publicPort:
+                          type: integer
+                subscriptionExpireTime:
+                  type: string
+                  format: date-time
+                subscriptionMaxEvents:
+                  type: integer
+                initialEvent:
+                  type: boolean
+
+    Subscription:
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionRequest'
+        - type: object
+          required:
+            - id
+            - startsAt
+          properties:
+            id:
+              type: string
+            startsAt:
+              type: string
+              format: date-time
+            expiresAt:
+              type: string
+              format: date-time
+            status:
+              type: string
+              enum: [ACTIVATION_REQUESTED, ACTIVE, DEACTIVE, EXPIRED, DELETED]
+
+    SubscriptionAsync:
+      type: object
+      properties:
+        id:
+          type: string
+
+    # ----------------------------------------
+    # Performance Metrics Schemas
+    # ----------------------------------------
+    CreateSubscription:
+      type: object
+      required:
+        - ueIp
+        - metricsSelection
+        - Interval
+        - webhook
+        - notificationURI
+      properties:
+        ueIp:
+          type: string
+          description: The IPv4 address of the device
+        metricsSelection:
+          type: array
+          items:
+            type: string
+            enum: [uplink_rate, downlink_rate]
+        expiresAt:
+          type: string
+          format: date-time
+        Interval:
+          type: integer
+        webhook:
+          type: string
+          format: uri
+        notificationURI:
+          type: string
+          format: uri
+          description: URI for asynchronous notifications
+        notificationAuthToken:
+          type: string
+
+    SubscriptionInfo:
+      type: object
+      required:
+        - subscriptionId
+        - metricsSelection
+      properties:
+        subscriptionId:
+          type: string
+        metricsSelection:
+          type: array
+          items:
+            type: string
+
+    MetricsReport:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UeNotFound, FetchError, Ok]
+        timestamp:
+          type: string
+        subscriptionId:
+          type: string
+        ulRate:
+          type: integer
+          description: The uplink (UL) rate in bits/s
+        dlRate:
+          type: integer
+          description: The downlink (DL) rate in bits/s
+
+    # ----------------------------------------
+    # Quality on Demand Schemas
+    # ----------------------------------------
+    CreateSession:
+      type: object
+      required:
+        - applicationServer
+        - qosProfile
+        - duration
+      properties:
+        device:
+          $ref: '#/components/schemas/DeviceDetails'
+        applicationServer:
+          $ref: '#/components/schemas/AppServerDetails'
+        devicePorts:
+          $ref: '#/components/schemas/PortsDetails'
+        applicationServerPorts:
+          $ref: '#/components/schemas/PortsDetails'
+        qosProfile:
+          type: string
+        sink:
+          type: string
+          format: uri
+        sinkCredential:
+          type: object
+          properties:
+            credentialType:
+              type: string
+        duration:
+          type: integer
+          description: Requested session duration in seconds
+
+    SessionInfo:
+      allOf:
+        - $ref: '#/components/schemas/CreateSession'
+        - type: object
+          required:
+            - sessionId
+            - qosStatus
+          properties:
+            sessionId:
+              type: string
+            startedAt:
+              type: string
+            expiresAt:
+              type: string
+            qosStatus:
+              type: string
+            statusInfo:
+              type: string
+              enum: [DURATION_EXPIRED, NETWORK_TERMINATED, DELETE_REQUEST]
+
+    ExtendSessionDuration:
+      type: object
+      required:
+        - requestedAdditionalDuration
+      properties:
+        requestedAdditionalDuration:
+          type: integer
+          description: Additional duration in seconds to be added
+
+    RetrieveSessionsInput:
+      type: object
+      required:
+        - device
+      properties:
+        device:
+          $ref: '#/components/schemas/DeviceDetails'
+
+    # Helper schemas for QoD
+    DeviceDetails:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+        networkAccessIdentifier:
+          type: string
+        ipv4Address:
+          type: object
+          properties:
+            publicAddress:
+              type: string
+            privateAddress:
+              type: string
+            publicPort:
+              type: integer
+        ipv6Address:
+          type: string
+
+    AppServerDetails:
+      type: object
+      properties:
+        ipv4Address:
+          type: string
+        ipv6Address:
+          type: string
+
+    PortsDetails:
+      type: object
+      properties:
+        ranges:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: integer
+              to:
+                type: integer
+        ports:
+          type: array
+          items:
+            type: integer

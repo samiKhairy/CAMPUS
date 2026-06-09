@@ -71,6 +71,11 @@ def process_results(root_dir, output_base):
                         if ts_diff > 1.0:
                             duration_s = ts_diff + (1.0 / params["rate"]) # round up to full interval
                     
+                    # If the inferred duration collapses due to connection/discovery failure,
+                    # fall back to the intended 30s run length.
+                    if duration_s < 28.0:
+                        duration_s = 30.0
+                    
                     expected_packets = params["devices"] * params["rate"] * duration_s
                     lost_packets = max(0, expected_packets - n_rec)
                     loss_pct = (lost_packets / expected_packets) * 100 if expected_packets > 0 else 0.0

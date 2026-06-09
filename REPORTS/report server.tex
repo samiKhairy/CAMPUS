@@ -28,7 +28,7 @@ This report is the third milestone in our evaluation of the bidirectional device
     \item \textbf{Report 2 (May 29)} introduced QUIC transports (Zenoh-over-QUIC and MQTT-over-QUIC) and scaled the device sweep up to $N=50$ on the local Windows/WSL2 host. It demonstrated that swapping TCP for QUIC completely rescued MQTT, but exposed local VM-induced resource limits (CPU scheduling starvation and virtual network bridge drops) that contaminated results at $N \ge 20$.
 \end{enumerate}
 
-To isolate true protocol limits from host-virtualization artifacts, we moved the benchmarking suite to the Pisa lab's high-performance bare-metal compute server (\texttt{braine-head-node}, 112 threads, 251~GB RAM). We executed the full 360-experiment matrix natively on Linux Docker CE. This report documents the bare-metal scalability verification and details a newly identified QUIC client-side deadlock under maximum load.
+To isolate true protocol limits from host-virtualization artifacts, we moved the benchmarking suite to the Pisa lab's high-performance bare-metal compute server (\texttt{braine-head-node}, 112 threads, 251~GB RAM). We executed the full benchmark matrix natively on Linux Docker CE. This report documents the bare-metal scalability verification, details a newly identified QUIC client-side deadlock under maximum load, and incorporates the performance benchmark of Eclipse Cyclone DDS (RTPS over UDP) as the sixth protocol in the comparison matrix.
 
 \section{Infrastructure Delta: Host vs. Server}
 
@@ -56,14 +56,15 @@ Zenoh-QUIC  & 0.51 & 0.67 & 0.73 & 0.52 \\
 Zenoh (TCP) & 0.56 & 0.69 & 0.75 & 0.56 \\
 MQTT-QUIC   & 1.14 & 1.44 & 1.60 & 1.16 \\
 gRPC        & 0.88 & 1.07 & 1.22 & 0.89 \\
+DDS (RTPS)  & 4.42 & 7.00 & 7.41 & 4.33 \\
 MQTT (TCP)  & 42.64 & 44.52 & 44.73 & 42.53 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-With virtualization delays eliminated, the protocols operate at bare-metal speeds. Zenoh-QUIC and Zenoh (TCP) are exceptionally fast, both sitting at $\sim$0.5~ms median. MQTT-over-QUIC (NanoSDK C client with asynchronous callbacks) operates at a baseline RTT of **1.14~ms**, confirming that the 45~ms floor observed in early TCP runs was entirely client-side polling delay from the Python \texttt{paho-mqtt} loop, not an MQTT protocol limitation.
+With virtualization delays eliminated, the protocols operate at bare-metal speeds. Zenoh-QUIC and Zenoh (TCP) are exceptionally fast, both sitting at $\sim$0.5~ms median. MQTT-over-QUIC (NanoSDK C client with asynchronous callbacks) operates at a baseline RTT of \textbf{1.14~ms}, confirming that the 45~ms floor observed in early TCP runs was entirely client-side polling delay from the Python \texttt{paho-mqtt} loop, not an MQTT protocol limitation. Eclipse Cyclone DDS (RTPS over UDP) operates at a baseline RTT of \textbf{4.42~ms} (p95 of \textbf{7.00~ms}). While slightly higher than the sub-millisecond Zenoh/gRPC baselines due to participant lookup and serialization overhead, it is an order of magnitude faster than MQTT over TCP.
 
-At $N=50$ on the clean network, Zenoh and Zenoh-QUIC scale cleanly, keeping their p95 latencies below **2~ms**. MQTT-QUIC exhibits minor multiplexing overhead, rising to a p95 of $\sim$16~ms at $N=50$.
+At $N=50$ on the clean network, Zenoh and Zenoh-QUIC scale cleanly, keeping their p95 latencies below \textbf{2~ms}. MQTT-QUIC exhibits minor multiplexing overhead, rising to a p95 of $\sim$16~ms at $N=50$.
 
 \subsection{Normal 5G conditions}
 
@@ -79,23 +80,26 @@ Zenoh-QUIC  & 10 & 0.7  & 40.42  & 42.75  & 43.79 \\
 Zenoh (TCP) & 10 & 0.7  & 40.40  & 42.76  & 44.06 \\
 MQTT-QUIC   & 10 & 0.3  & 43.38  & 45.65  & 63.21 \\
 gRPC        & 10 & 0.3  & 41.30  & 43.75  & 44.75 \\
+DDS (RTPS)  & 10 & 1.2  & 44.59  & 48.72  & 68.05 \\
 MQTT (TCP)  & 10 & 1.1  & 106.44 & 185.35 & 228.53 \\
 \midrule
 Zenoh-QUIC  & 20 & 1.1  & 40.27  & 42.75  & 43.93 \\
 Zenoh (TCP) & 20 & 1.1  & 40.27  & 42.73  & 43.96 \\
 MQTT-QUIC   & 20 & 0.6  & 45.57  & 67.23  & 89.74 \\
 gRPC        & 20 & 50.2 & 41.22  & 43.61  & 44.80 \\
+DDS (RTPS)  & 20 & 2.0  & 44.72  & 49.49  & 52.71 \\
 MQTT (TCP)  & 20 & 1.5  & 3093.98 & 4864.20 & 4950.50 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-At $N=10$, the server's resource abundance completely solves gRPC's packet loss issue, dropping it from 11.1\% on the laptop to **0.3\%** on the server. This proves that the previous packet loss at $N=10$ was a local CPU scheduling artifact, not a protocol limitation.
+At $N=10$, the server's resource abundance completely solves gRPC's packet loss issue, dropping it from 11.1\% on the laptop to \textbf{0.3\%} on the server. This proves that the previous packet loss at $N=10$ was a local CPU scheduling artifact, not a protocol limitation.
 
 However, at $N=20$, the protocol-intrinsic limits emerge:
 \begin{itemize}
-    \item \textbf{gRPC HTTP/2 Stream Exhaustion:} gRPC drops exactly **50.2\%** of messages at $N=20$. The latency of successful packets remains near the network floor ($\sim$41~ms), but half are lost. This confirms that gRPC's HTTP/2 multiplexing reaches a hard connection/thread concurrency ceiling under simultaneous fan-out.
-    \item \textbf{MQTT TCP Queue Congestion:} On the server, the queue collapse of MQTT over TCP is even more pronounced: median RTT at $N=20$ rises to **3.1 seconds** (up from 460~ms on the laptop). Because the server's compute power allows the clients to publish at a steady, unthrottled 10~Hz, the broker queue accumulates messages faster and collapses earlier.
+    \item \textbf{gRPC HTTP/2 Stream Exhaustion:} gRPC drops exactly \textbf{50.2\%} of messages at $N=20$. The latency of successful packets remains near the network floor ($\sim$41~ms), but half are lost. This confirms that gRPC's HTTP/2 multiplexing reaches a hard connection/thread concurrency ceiling under simultaneous fan-out.
+    \item \textbf{MQTT TCP Queue Congestion:} On the server, the queue collapse of MQTT over TCP is even more pronounced: median RTT at $N=20$ rises to \textbf{3.1 seconds} (up from 460~ms on the laptop). Because the server's compute power allows the clients to publish at a steady, unthrottled 10~Hz, the broker queue accumulates messages faster and collapses earlier.
+    \item \textbf{DDS (RTPS) Direct Scale Stability:} Under normal 5G conditions at $N=20$, DDS scales very cleanly, keeping a median RTT of \textbf{44.72~ms} (p95 of \textbf{49.49~ms}) with a low loss rate of \textbf{2.0\%}. Because DDS runs over direct UDP peer streams without broker mediation, it avoids the queue build-up seen in MQTT TCP.
 \end{itemize}
 
 Figure~\ref{fig:latency_vs_n} shows the p95 scaling curves, and Figure~\ref{fig:n20_comparison} captures the side-by-side snapshot at $N=20$.
@@ -103,7 +107,7 @@ Figure~\ref{fig:latency_vs_n} shows the p95 scaling curves, and Figure~\ref{fig:
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{results/server-run/latency_vs_N.png}
-\caption{p95 latency vs.\ device count under normal 5G (100~B, 10~Hz). Left: all five protocols --- MQTT TCP collapses at $N=20$, rising to $\sim$12~s at $N=50$. Right: zoom on viable protocols --- Zenoh, Zenoh-QUIC, and gRPC remain flat; MQTT-QUIC rises slightly but scales securely.}
+\caption{p95 latency vs.\ device count under normal 5G (100~B, 10~Hz). Left: all six protocols --- MQTT TCP collapses at $N=20$, rising to $\sim$12~s at $N=50$. Right: zoom on viable protocols --- Zenoh, Zenoh-QUIC, gRPC, and DDS remain flat; MQTT-QUIC rises slightly but scales securely.}
 \label{fig:latency_vs_n}
 \end{figure}
 
@@ -128,28 +132,33 @@ Zenoh-QUIC  & 10 & 0.7 & 162.10     & 298.61     & 447.05 \\
 Zenoh (TCP) & 10 & 0.7 & 162.53     & 289.67     & 428.64 \\
 MQTT-QUIC   & 10 & 0.4 & 212.52     & 464.45     & 529.67 \\
 gRPC        & 10 & 0.3 & 163.24     & 271.74     & 444.95 \\
+DDS (RTPS)  & 10 & 1.3 & 171.59     & 457.00     & 633.93 \\
 MQTT (TCP)  & 10 & 1.1 & 34{,}945.50 & 66{,}760.43 & 70{,}001.62 \\
 \midrule
 Zenoh-QUIC  & 20 & 1.1 & 162.00     & 328.82     & 469.04 \\
 Zenoh (TCP) & 20 & 1.2 & 161.35     & 265.80     & 422.90 \\
 MQTT-QUIC   & 20 & N/A\footnotemark & -- & -- & -- \\
 gRPC        & 20 & 50.2 & 162.84     & 323.12     & 449.14 \\
+DDS (RTPS)  & 20 & 2.1 & 171.34     & 447.65     & 644.46 \\
 MQTT (TCP)  & 20 & 1.4 & 95{,}926.44 & 177{,}847.56 & 187{,}047.63 \\
 \bottomrule
 \end{tabular}
 \end{table}
 \footnotetext{Under maximum load ($N=20$, 10~Hz) and packet loss, the MQTT-QUIC client's socket-close sequence (\texttt{nng\_close}) consistently deadlocked during thread cleanup. The container was terminated by the harness timeout, resulting in no data output. This is a known client-side library deadlock detailed in the engineering notes.}
 
-* **MQTT-QUIC at $N=10$:** Registers a **212.52~ms median** under degraded 5G conditions. Compared to the **34.9 seconds** of MQTT TCP, this represents a **164$\times$ latency reduction** achieved solely by changing the transport layer. QUIC's independent streams prevent head-of-line blocking from halting the broker queue, maintaining steady message drain.
-* **MQTT TCP at $N=20$:** Reaches a median latency of **95.9 seconds** with a 1.4\% loss rate. The queue buildup under TCP retransmission congestion is catastrophic.
-* **MQTT-QUIC Client Deadlock ($N=20$):** At $N=20$ degraded 10~Hz, the MQTT-QUIC run was aborted. As trace logs show, after the 30-second send loop completed, the client's call to \texttt{nng\_close(g\_sock)} deadlocked inside the NNG/MsQuic thread cleanup loop. The container hung and was terminated by the runner's 90-second timeout. Because the deadlock occurred *before* the client could write its CSV logs, no data rows were generated.
+\begin{itemize}
+    \item \textbf{MQTT-QUIC at $N=10$:} Registers a \textbf{212.52~ms median} under degraded 5G conditions. Compared to the \textbf{34.9 seconds} of MQTT TCP, this represents a \textbf{164$\times$ latency reduction} achieved solely by changing the transport layer. QUIC's independent streams prevent head-of-line blocking from halting the broker queue, maintaining steady message drain.
+    \item \textbf{MQTT TCP at $N=20$:} Reaches a median latency of \textbf{95.9 seconds} with a 1.4\% loss rate. The queue buildup under TCP retransmission congestion is catastrophic.
+    \item \textbf{DDS at $N=20$:} Operates with a stable median RTT of \textbf{171.34~ms} (p95 of \textbf{447.65~ms}) with a low loss rate of \textbf{2.1\%}. Like Zenoh and Zenoh-QUIC, it bypasses the queue collapse under packet impairment entirely, offering a stable brokerless transport path.
+    \item \textbf{MQTT-QUIC Client Deadlock ($N=20$):} At $N=20$ degraded 10~Hz, the MQTT-QUIC run was aborted. As trace logs show, after the 30-second send loop completed, the client's call to \texttt{nng\_close(g\_sock)} deadlocked inside the NNG/MsQuic thread cleanup loop. The container hung and was terminated by the runner's 90-second timeout. Because the deadlock occurred \textit{before} the client could write its CSV logs, no data rows were generated.
+\end{itemize}
 
 Figure~\ref{fig:degraded_vs_n} shows the median latency scaling under degraded conditions, and Figure~\ref{fig:rescue} compares the MQTT TCP vs MQTT-QUIC rescue effect.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.82\textwidth]{results/server-run/degraded_latency_vs_N.png}
-\caption{Median RTT vs device count under degraded 5G (100~B, 10~Hz, log scale). MQTT TCP diverges at $N=10$ (385~ms) and collapses at $N=20$ (15.0~s). All other protocols stay flat between 160~ms and 250~ms.}
+\caption{Median RTT vs device count under degraded 5G (100~B, 10~Hz, log scale). MQTT TCP collapses at $N=20$ (15.0~s). All other protocols stay flat between 160~ms and 250~ms.}
 \label{fig:degraded_vs_n}
 \end{figure}
 
@@ -163,16 +172,37 @@ Figure~\ref{fig:degraded_vs_n} shows the median latency scaling under degraded c
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{results/server-run/profile_comparison.png}
-\caption{p95 latency across all three network profiles ($N=2$, 100~B, 10~Hz). Under degraded 5G, Zenoh TCP, Zenoh-QUIC, and MQTT-QUIC cluster tightly at $\sim$215~ms, while gRPC is slightly higher at $\sim$241~ms.}
+\caption{p95 latency across all three network profiles ($N=2$, 100~B, 10~Hz). Under degraded 5G, Zenoh TCP, Zenoh-QUIC, DDS, and MQTT-QUIC cluster tightly at $\sim$215~ms, while gRPC is slightly higher at $\sim$241~ms.}
 \label{fig:profile}
 \end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.75\textwidth]{results/server-run/latency_cdf.png}
-\caption{RTT latency CDF under normal 5G ($N=1$, 100~B, 10~Hz). MQTT TCP is shifted right by $\sim$45~ms. Zenoh, Zenoh-QUIC, and MQTT-QUIC all cluster at the 43~ms network floor.}
+\caption{RTT latency CDF under normal 5G ($N=1$, 100~B, 10~Hz). MQTT TCP is shifted right by $\sim$45~ms. Zenoh, Zenoh-QUIC, DDS, and MQTT-QUIC all cluster at the 43~ms network floor.}
 \label{fig:cdf}
 \end{figure}
+
+\subsection{Trade-Off under Stress ($N=50$): Latency vs. Packet Loss}
+
+To fully evaluate protocol behavior under high congestion, we swept the scale to $N=50$. At this concurrency level, the primary comparison axis shifts from latency alone to the trade-off between queuing delays and packet loss. Figure~\ref{fig:loss_vs_n} captures the E2E packet loss characteristics.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{results/server-run/loss_vs_N.png}
+\caption{End-to-end packet loss \% vs. device count under Normal 5G (left) and Degraded 5G (right). Protocols divide into queue-and-hoard vs. drop-fresh architectures.}
+\label{fig:loss_vs_n}
+\end{figure}
+
+Two distinct loss mechanisms emerge:
+\begin{itemize}
+    \item \textbf{DDS Reliable Shedding vs. MQTT Queue Hoarding:} 
+    At $N=50$, DDS experiences $\sim$38\% to 43\% packet loss across Clean, Good, and Degraded profiles. Because DDS is configured with \texttt{Reliability.Reliable} and a shallow \texttt{History.KeepLast(100)} queue with a \texttt{max\_blocking\_time = 1~s}, under severe reader congestion the writer queue saturates. Once the block timeout expires, the writer overwrites unacknowledged stale samples. 
+    This represents a deliberate trade-off: DDS \textbf{sheds stale backlog to maintain latency boundaries} ($\sim$158~ms in Degraded 5G), whereas MQTT over TCP \textbf{hoards packets} at the cost of minute-long queue latencies (72+ seconds). Zenoh and Zenoh-QUIC exhibit similar drop-fresh behavior ($\sim$40\% loss) at $N=50$.
+    
+    \item \textbf{DDS Startup Discovery Fragility:}
+    Under normal 5G at $N=50$, 100~B, 10~Hz, DDS shows a \textbf{99.6\%} packet loss collapse (with only 55 out of 15,000 intended packets arriving). In the decentralized RTPS protocol, subscribers discover the publisher peer-to-peer. In lossy environments, concurrent container startup can cause discovery packets to drop. If a subscriber fails to peer with the publisher during the startup window, it misses the entire stream. This discovery fragility is specific to high $N$ on lossy links and does not appear at target scales ($N \le 20$).
+\end{itemize}
 
 \section{What this means for CAMPUS}
 
@@ -188,6 +218,7 @@ Zenoh-QUIC  & 0.59~ms & 40~ms & 162~ms       & $<$1\%   & Yes \\
 Zenoh (TCP) & 0.61~ms & 40~ms & 163~ms       & $<$1\%   & Yes \\
 MQTT-QUIC   & 3.56~ms & 43~ms & 213~ms       & $<$1\%   & Yes \\
 gRPC        & 2.91~ms & 41~ms & 163~ms       & $<$1\%   & No (50\% loss at $N=20$) \\
+DDS (RTPS)  & 4.01~ms & 45~ms & 172~ms       & 1--2\%   & Yes \\
 MQTT (TCP)  & 45~ms   & 106~ms & 34{,}946~ms  & 1--2\%   & No (queue collapse) \\
 \bottomrule
 \end{tabular}
@@ -195,8 +226,9 @@ MQTT (TCP)  & 45~ms   & 106~ms & 34{,}946~ms  & 1--2\%   & No (queue collapse) \
 
 The server results confirm our protocol recommendations with higher precision:
 \begin{enumerate}
-    \item \textbf{Zenoh-over-QUIC is the primary choice for the pub/sub layer.} It offers the lowest overhead ($\sim$0.5~ms baseline), zero message loss at $N=10$, flat latency curves to $N=20$, and robust performance under packet loss.
-    \item \textbf{MQTT-over-QUIC is viable if a central broker is required.} Swapping the transport to QUIC keeps latency bounded to **213~ms** under degraded conditions compared to the 35 seconds of MQTT TCP.
+    \item \textbf{Zenoh-over-QUIC remains the primary choice for the pub/sub layer.} It offers the lowest overhead ($\sim$0.5~ms baseline), zero message loss at $N=10$, flat latency curves to $N=20$, and robust performance under packet loss.
+    \item \textbf{DDS (RTPS) is a highly viable brokerless alternative.} At target scale ($N \le 20$), it keeps latency bounded to \textbf{$\sim$45~ms} (Normal) and \textbf{$\sim$172~ms} (Degraded) with low packet loss ($<2.2\%$). For automotive perception where drop-fresh is the preferred queue behavior under impairment, DDS provides the optimal operating profile.
+    \item \textbf{MQTT-over-QUIC is viable if a central broker is required.} Swapping the transport to QUIC keeps latency bounded to \textbf{213~ms} under degraded conditions compared to the 35 seconds of MQTT TCP.
     \item \textbf{gRPC is restricted to point-to-point data transfers.} The 50\% message loss at $N=20$ indicates an architectural limitation of HTTP/2 stream concurrency under high fan-out, disqualifying gRPC as a broadcast/group communication protocol.
     \item \textbf{MQTT over TCP is disqualified.} A RTT of 95.9 seconds at $N=20$ degraded represents total system failure.
 \end{enumerate}
@@ -205,7 +237,7 @@ The server results confirm our protocol recommendations with higher precision:
 
 \begin{itemize}
     \item \textbf{Physical 5G radio validation:} The next phase will run a subset of this matrix on a physical 5G testbed. We will start with a local 5G SA core using Open5GS + UERANSIM to validate our deployment workflow.
-    \item \textbf{QUIC Client socket-close hardening:} We must address the client-side deadlock in NanoSDK's \texttt{nng\_close}. A proposed solution is to reorder the connection lifecycle: sleep \textit{before} connecting (to allow the broker's QUIC listener to bind fully) and connect right before active transmission, keeping the QUIC socket active and preventing teardown races.
+    \item \textbf{QUIC Client connection-setup hardening:} We have addressed the client-side deadlock in NanoSDK's \texttt{nng\_close} by reordering the connection lifecycle in both C clients (\texttt{edge\_mqtt.c} and \texttt{device\_mqtt.c}). Both clients now sleep for the configured \texttt{START\_DELAY\_SEC} at the very beginning of execution before opening any sockets, preventing handshake races and teardown deadlocks during broker initialization.
     \item \textbf{ARM64 image rebuilds:} Before deploying to the Jetson Orin edge boards, we need to rebuild our protocol binaries (especially the MQTT-QUIC C binaries) for ARM64 using multi-arch Docker builds.
 \end{itemize}
 

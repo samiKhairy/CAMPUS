@@ -160,7 +160,8 @@ def on_ack(sample):
                 
                 latencies = [r[2] for r in stats[dev]["records"]]
                 avg_ms = sum(latencies) / len(latencies)
-                print(f"[EDGE] E2E Ack from {dev} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+                if VERBOSE:
+                    print(f"[EDGE] E2E Ack from {dev} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
         else:
             rtt_ns = recv_ts_ns - send_ts_ns
             rtt_ms = rtt_ns / 1e6
@@ -172,7 +173,8 @@ def on_ack(sample):
             latencies = [r[2] for r in stats[dev]["records"]]
             avg_ms = sum(latencies) / len(latencies)
 
-            print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
+            if VERBOSE:
+                print(f"[EDGE] Ack from {dev} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {stats[dev]['count']})")
     except Exception as e:
         print(f"[EDGE] Error handling ack: {e}")
 

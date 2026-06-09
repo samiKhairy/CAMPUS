@@ -142,7 +142,8 @@ class DeviceService(device_pb2_grpc.DeviceServiceServicer):
                                 self.stats[device_id]["count"] += 1
                                 latencies = [r[2] for r in self.stats[device_id]["records"]]
                                 avg_ms = sum(latencies) / len(latencies)
-                            print(f"[EDGE] E2E Ack from {device_id} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
+                            if VERBOSE:
+                                print(f"[EDGE] E2E Ack from {device_id} -> E2E={e2e_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
                     else:
                         rtt_ns = recv_ts_ns - send_ts_ns
                         rtt_ms = rtt_ns / 1e6
@@ -155,7 +156,8 @@ class DeviceService(device_pb2_grpc.DeviceServiceServicer):
                             latencies = [r[2] for r in self.stats[device_id]["records"]]
                             avg_ms = sum(latencies) / len(latencies)
                             
-                        print(f"[EDGE] Ack from {device_id} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
+                        if VERBOSE:
+                            print(f"[EDGE] Ack from {device_id} -> RTT={rtt_ms:.2f} ms (Avg: {avg_ms:.2f} ms, Total acks: {len(latencies)})")
             except grpc.RpcError:
                 # Handle connection aborts quietly
                 pass
